@@ -8,11 +8,23 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 
 **Do not touch mm-radar from this project.** Sibling. Different discipline stack.
 
-## Current state (as of 2026-07-10, updated end of Vault Session 2)
+## Current state (as of 2026-07-10, end of Vault Session 2)
 
-**Phase: 1 — Scraper build, Tasks 1-4 complete + Task 5 code-side complete.** API probe, data model, parser, end-to-end scraper with injectable Supabase writer all shipped. 38/38 tests green. `SupabaseWriter` batches upserts + status-log appends; `NoOpWriter` keeps file-only mode working when creds are absent. Live Supabase apply + smoke test blocked on user creds. See `docs/PHASE_1_LOG.md` (Session 1) and `docs/PHASE_1_SESSION_2_LOG.md` (Session 2).
+**Phase: 1 — Tasks 1-6 + 8 shipped. 30-day pilot burning.** Scraper is live in GitHub Actions on `*/15` cron writing to Supabase. Tier ladder (`apyList`) preserved as JSONB. 46/46 tests green. Repo pushed private to `github.com/farhungers/defi-investor`.
 
-**Next tasks:** all remaining Phase 1 work is planned in `docs/PHASE_1_EXECUTION_PLAN.md`. That is the master execution doc. Read it before doing anything. Immediate blocker: user pastes Supabase creds + scheduler choice + retention policy + repo home per §D of that plan.
+Component status:
+- Task 5 Supabase: LIVE. 399 rows in `earn_events`, LAB present, status log accumulating.
+- Task 6 scheduler: GH Actions (Option B), `.github/workflows/scrape.yml`. First run at 2026-07-09 23:20 UTC hydrated 399 prior rows from Supabase, upserted 399, artifacts uploaded.
+- Task 8 detail probe: DONE, list-only path confirmed viable. Detail URLs 404, pool size not public. Tier ladder was hidden in list SSR and is now captured (schema v0.2.0).
+
+**Immediate blockers:** 48h uptime accumulation before B3 (monitoring). Nothing to ship right now that isn't gated on real pilot data.
+
+**Next tasks:**
+1. Build `scripts/uptime_check.py` + `.github/workflows/uptime.yml`. Alert channel = GH's default email on failed workflow (no Telegram bot needed for pilot).
+2. Watch Actions success rate and Supabase `last_seen_at` freshness for 48h.
+3. After 30 days: `docs/PHASE_1_COMPLETION.md`, open Phase 2.
+
+See `docs/PHASE_1_LOG.md` (Session 1), `docs/PHASE_1_SESSION_2_LOG.md` (Session 2), and `docs/PHASE_1_EXECUTION_PLAN.md` (master plan).
 
 Read in this order:
 1. `README.md` — vision + hypothesis in plain language

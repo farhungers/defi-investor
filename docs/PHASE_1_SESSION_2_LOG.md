@@ -6,49 +6,64 @@
 
 ## Shipped
 
-- **Task 5 code path (B1) — the offline half.** Everything the scraper needs to write to Supabase is in place. The last mile (schema apply + live smoke test) is blocked on user creds.
-  - `src/defi_investor/db.py`: `Writer` protocol, `NoOpWriter`, `SupabaseWriter` (batches upserts on `earn_events` with `on_conflict=product_id`, appends to `earn_events_status_log`), `build_writer()` env-var factory.
-  - `src/defi_investor/scraper.py`: `run_scrape()` now takes an optional `writer` param; defaults to `build_writer()`. `ScrapeResult` gained `events_upserted_remote` + `transitions_logged_remote`. `main()` calls `dotenv.load_dotenv()` if available.
-  - `pyproject.toml`: added `supabase>=2.5` and `python-dotenv>=1.0`.
-  - `.env.example`: documents `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
-- **Tests.** 38/38 green (was 27; +10 db tests, +1 injected-writer scraper test). Covers batching, on_conflict shape, empty-input no-ops, NoOp fallback, env-var driven factory, and full offline flow mirroring the merged catalog to a recording writer.
+**Task 5 (Supabase integration) — done end-to-end and live.**
+- `src/defi_investor/db.py`: `Writer` protocol, `NoOpWriter`, `SupabaseWriter` (batched upserts on `earn_events` with `on_conflict=product_id`, appends to `earn_events_status_log`, paginated `fetch_events()` for state hydration).
+- `src/defi_investor/scraper.py`: `run_scrape()` mirrors merged catalog to writer, rehydrates prior state from writer when local JSONL is missing (Actions).
+- `db/schema.sql` applied to Supabase. First live scrape: 399 rows, LAB present with correct fields, 7 status transitions logged.
+
+**Task 8 (product detail probe) — done, list-only path confirmed viable.**
+- Findings in `docs/PHASE_1_PROBE_LOG_v2.md`.
+- Product-detail URLs 404 across all guessed patterns; Bitget renders details as client-side modal, no SSR to scrape.
+- Total pool size not publicly exposed anywhere — kill-clause §B4 applies, H3 still testable list-only.
+- **Per-tier APR ladder IS in the main list page** and was being discarded. Migration shipped (see below).
+
+**Tier migration (v0.2.0) — applied live.**
+- `db/migrations/002_add_tiers.sql`: `ADD COLUMN tiers JSONB NOT NULL DEFAULT '[]'::jsonb` + partial index on multi-tier rows.
+- Parser preserves full `apyList` verbatim.
+- Verified live: LAB 1-tier, USDT 2-tier (1.88% first 300k, 1.06% next 50M), PAXG 2-tier (99.99% first 0.025, 2% next 125), PEPE 2-tier, ARB/USDGO 3-tier. Distribution: 359×1-tier, 30×0-tier (likely empty apyList = sold-out), 8×2-tier, 2×3-tier.
+- SCRAPER_VERSION bumped to 0.2.0.
+
+**Task 6 (scheduler) — Option B GH Actions live.**
+- `.github/workflows/scrape.yml`: `*/15 * * * *` cron + `workflow_dispatch`. Concurrency guard, Python 3.12 with pip cache, 5-min timeout.
+- Supabase creds set as repo secrets via `gh secret set`.
+- First manual run (id 29057108742): 20s, hydrated 399 prior rows from Supabase, upserted 399, artifacts uploaded (raw HTML 30-day retention, catalog snapshot 7-day retention).
+- Pilot clock is running.
+
+**Repo pushed to GitHub.**
+- `https://github.com/farhungers/defi-investor` (private).
+- `arbabfar` → `farhungers` handle corrected everywhere (CLAUDE.md, execution plan, memory).
+- Local git identity uses noreply email `301908416+farhungers@users.noreply.github.com` so future commits attribute to profile.
+- `deploy/` tree written but not deployed (OCI VM path deferred; GH Actions won instead).
+
+**Tests.** 46/46 green (was 27 at end of Session 1). +10 db tests, +5 model tests (tiers), +4 parser tests (multi-tier), covered fetch_events pagination + tier preservation across round-trips.
+
+## What did NOT ship this session
+
+- **B3 Task 7 monitoring/alerting.** Scaffold pending. 48h burn-in must accumulate first per plan §B3. Recommend: build `scripts/uptime_check.py` in the next session, wire a nightly GH Actions workflow that fails loudly when the last scrape is > 30 min stale or when parser data_quality != 'complete'. GitHub emails farhungers on workflow failure — no Telegram bot needed for pilot alerting.
+- **B5 Task 9 completion report.** Blocked on 30 continuous days of B2 uptime.
+- **Backfill of pre-migration rows with tiers.** Not needed — every scrape re-upserts every row, so `tiers` populates naturally within one cron tick after migration.
+- **OCI VM setup.** deploy/ tree lives in the repo for later; not deployed. Option B chosen instead.
 
 ## Design choices worth remembering
 
-- **NoOpWriter is intentional, not a stub.** Missing creds must not crash the scraper — file mode is the corpus of record; Supabase is a mirror. `build_writer()` logs the fallback so cron doesn't silently degrade.
-- **`Writer` client is injectable.** The supabase package is only imported inside `SupabaseWriter.__init__` when no client is passed. Tests run without the dep loaded. Helps if Bitget scraper ever runs somewhere without the supabase Python SDK.
-- **Batch size 500.** Below Supabase's default row-limit per request and well above the ~400-event working set. One HTTP call per scrape covers the current corpus.
-- **`upsert_events` writes the full merged catalog every scrape**, not just deltas. Keeps `last_seen_at` accurate for every product without a separate touch step. Cost is one batched upsert of ~400 rows every 15 min = trivial.
-
-## What did NOT ship (blocked on user)
-
-- **Applying `db/schema.sql` to a real Supabase project.** Needs the URL + `service_role` key so I can hand the user the exact SQL to paste (or use the CLI if they prefer).
-- **Live smoke test.** After schema is applied, run one scrape against real Supabase, verify 399 rows in `earn_events` with LAB present, and confirm status_log stays empty on first scrape.
-- **Scheduler wiring (B2).** Blocked on user picking OCI VM vs GH Actions vs Edge Fn per `PHASE_1_EXECUTION_PLAN.md` §A2.
-
-## Handoff — what the user needs to paste next
-
-Per `PHASE_1_EXECUTION_PLAN.md` §D:
-
-```
-Supabase URL: <paste>
-Supabase service_role key: <paste>
-Scheduler choice: [OCI / GH Actions / Edge Fn]
-Retention policy: [30-day rolling / Backblaze / local forever]
-Repo home: [private GH / public GH / stay local]
-```
-
-Once creds are in, next session:
-1. Copy the two vars into `.env` (gitignored).
-2. Paste `db/schema.sql` into Supabase SQL editor. Confirm both tables created.
-3. Run `python -m defi_investor.scraper` once. Verify Supabase gets ~399 rows and `events_upserted_remote` in the JSON output equals `events_seen`.
-4. Then start B2 wiring.
+- **NoOpWriter is a first-class writer, not a stub.** `build_writer()` returns it when creds are unset. Scraper stays file-only in dev/CI without any code branching.
+- **`Writer.fetch_events()` is the state hydration hook.** Local JSONL is the default source; Supabase is the fallback for ephemeral runners. This is why GH Actions runs don't corrupt `first_seen_at`.
+- **`tiers` stored raw**, keeping Bitget's camelCase + string numerics (`apy`, `maxStepValue`, `minStepValue`, `productId`, `rateLevel`). Zero information loss; Phase 2 code coerces types when querying.
+- **Batch size 500 for upserts, page size 1000 for fetch.** Both well below Supabase defaults, one call per scrape.
+- **Artifact retention 30/7 days** matches Phase 1 §A3 default (30-day rolling). If we want longer, swap artifact retention or add Backblaze.
 
 ## State handoff to next session
 
-- Repo state: 38/38 tests green. No git init still. `.env.example` present; `.env` not created.
-- On-disk catalog: unchanged from Session 1 (`data/events/2026-07.jsonl` from the earlier live-verify runs).
-- Raw captures: unchanged.
-- No secrets in the repo.
+- Repo state: 46/46 tests green. Two branches of interest: `main` (protected? no) at commit `8ee97d2`. `.env` in place locally (gitignored).
+- Supabase live at `https://ewcalrgayfpwpcoielrl.supabase.co`. 399 rows in `earn_events` with tiers populated. `earn_events_status_log` accumulating.
+- GH Actions cron running every 15 min. Watch: `https://github.com/farhungers/defi-investor/actions`.
+- Local Windows catalog in `data/events/2026-07.jsonl` — historical, not the source of truth anymore.
+
+## Immediate next actions
+
+1. Let the pilot burn for 48h. Watch Actions success rate and Supabase `last_seen_at` freshness.
+2. Build `scripts/uptime_check.py` + `.github/workflows/uptime.yml` (nightly). Alert on: cadence gap > 30 min, any row with `data_quality != 'complete'`, coverage deviation > 10%.
+3. After 7 days: sanity-check the tier distribution hasn't drifted and no sold-out event was missed by cadence.
+4. After 30 days: write PHASE_1_COMPLETION.md, open Phase 2.
 
 — Vault, signing off Phase 1 Session 2
