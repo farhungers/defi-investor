@@ -28,6 +28,7 @@ import httpx
 
 from .db import Writer, build_writer
 from .models import EarnEvent, SCRAPER_VERSION
+from .notifier import Notifier, build_notifier, dispatch_scrape_notifications
 from .parsers.next_data import parse_earning_page
 
 
@@ -51,6 +52,7 @@ class ScrapeResult:
     events_status_transitions: list[tuple[str, int, int]]  # (product_id, old, new)
     events_upserted_remote: int = 0
     transitions_logged_remote: int = 0
+    alerts_sent: dict[str, int] = None  # {"new": _, "sold_out": _, "reopened": _}
 
 
 def _now_utc() -> datetime:
@@ -120,10 +122,17 @@ def merge_events(
     scraped_at: str,
     raw_capture_path: str,
     raw_capture_sha256: str,
-) -> tuple[dict[str, EarnEvent], int, int, list[tuple[str, int, int]]]:
-    """Merge fresh scrape into existing catalog. Returns (merged, n_new, n_updated, transitions)."""
+) -> tuple[dict[str, EarnEvent], list[EarnEvent], int, list[tuple[str, int, int]]]:
+    """Merge fresh scrape into existing catalog.
+
+    Returns (merged, new_events, n_updated, transitions):
+    - merged: full merged catalog dict, keyed by product_id
+    - new_events: list of events seen for the first time this scrape
+    - n_updated: number of existing rows updated
+    - transitions: (product_id, old_status, new_status) for status changes
+    """
     merged = dict(existing)
-    n_new = 0
+    new_events: list[EarnEvent] = []
     n_updated = 0
     transitions: list[tuple[str, int, int]] = []
 
@@ -140,7 +149,7 @@ def merge_events(
             if ev.sold_out:
                 ev.sold_out_first_seen_at = scraped_at
             merged[ev.product_id] = ev
-            n_new += 1
+            new_events.append(ev)
             continue
 
         # Preserve first_seen and sold_out_first_seen from prior observation
@@ -162,7 +171,7 @@ def merge_events(
         merged[ev.product_id] = ev
         n_updated += 1
 
-    return merged, n_new, n_updated, transitions
+    return merged, new_events, n_updated, transitions
 
 
 def write_catalog(events_path: Path, catalog: dict[str, EarnEvent]) -> None:
@@ -190,6 +199,7 @@ def run_scrape(
     project_root: Path,
     client: Optional[httpx.Client] = None,
     writer: Optional[Writer] = None,
+    notifier: Optional[Notifier] = None,
 ) -> ScrapeResult:
     """Fetch, capture, parse, merge, write to file, then mirror to writer.
 
@@ -219,6 +229,7 @@ def run_scrape(
     if writer is None:
         writer = build_writer()
 
+    hydrated_from_writer = False
     existing = load_existing_catalog(events_path)
     if not existing:
         # Ephemeral runners (GH Actions) lose the local JSONL between runs.
@@ -226,16 +237,18 @@ def run_scrape(
         # transitions stay accurate.
         existing = writer.fetch_events()
         if existing:
+            hydrated_from_writer = True
             LOG.info("hydrated %d prior events from writer (no local JSONL)",
                      len(existing))
 
-    merged, n_new, n_updated, transitions = merge_events(
+    merged, new_events, n_updated, transitions = merge_events(
         existing,
         events,
         scraped_at=scraped_at,
         raw_capture_path=str(raw_path.relative_to(project_root).as_posix()),
         raw_capture_sha256=sha256,
     )
+    n_new = len(new_events)
     write_catalog(events_path, merged)
     LOG.info("catalog: %d total, %d new, %d updated, %d transitions",
              len(merged), n_new, n_updated, len(transitions))
@@ -244,6 +257,30 @@ def run_scrape(
     n_logged = writer.log_status_transitions(
         transitions, observed_at=scraped_at, raw_capture_sha256=sha256
     )
+
+    # Alerts. Suppress on the very first cold-start run (no prior state at
+    # all) so we don't fire 300+ "new listing" cards. Once catalog is
+    # bootstrapped (either from JSONL or from writer hydration), alerts flow.
+    alerts_sent = {"new": 0, "sold_out": 0, "reopened": 0}
+    if notifier is None:
+        notifier = build_notifier()
+    if existing:
+        # Look up the event objects for each transition so cards get full context
+        transitions_with_events = [
+            (merged[pid], old, new)
+            for (pid, old, new) in transitions
+            if pid in merged
+        ]
+        alerts_sent = dispatch_scrape_notifications(
+            notifier,
+            new_events=new_events,
+            transitions_with_context=transitions_with_events,
+            observed_at=scraped_at,
+        )
+        if any(alerts_sent.values()):
+            LOG.info("alerts: %s", alerts_sent)
+    else:
+        LOG.info("cold start (no prior state) — alerts suppressed for this scrape")
 
     return ScrapeResult(
         scraped_at=scraped_at,
@@ -255,6 +292,7 @@ def run_scrape(
         events_status_transitions=transitions,
         events_upserted_remote=n_upserted,
         transitions_logged_remote=n_logged,
+        alerts_sent=alerts_sent,
     )
 
 
@@ -280,6 +318,7 @@ def main() -> None:
         "n_transitions": len(result.events_status_transitions),
         "events_upserted_remote": result.events_upserted_remote,
         "transitions_logged_remote": result.transitions_logged_remote,
+        "alerts_sent": result.alerts_sent,
         "raw_capture_sha256_head": result.raw_capture_sha256[:12],
         "raw_capture_path": str(result.raw_capture_path),
     }, indent=2))

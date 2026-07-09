@@ -28,14 +28,15 @@ def _sample_events() -> list[EarnEvent]:
 
 def test_merge_first_scrape_marks_all_new():
     fresh = _sample_events()
-    merged, n_new, n_upd, trans = merge_events(
+    merged, new_events, n_upd, trans = merge_events(
         existing={},
         fresh=fresh,
         scraped_at="2026-07-09T22:00:00+00:00",
         raw_capture_path="data/raw/2026-07-09/22-00-00_earning.html",
         raw_capture_sha256="a" * 64,
     )
-    assert n_new == 2
+    assert len(new_events) == 2
+    assert {e.product_id for e in new_events} == {"p1", "p2"}
     assert n_upd == 0
     assert trans == []
     assert merged["p1"].first_seen_at == "2026-07-09T22:00:00+00:00"
@@ -49,14 +50,14 @@ def test_merge_preserves_first_seen_on_second_scrape():
     prior_dict = {p.product_id: p for p in prior}
 
     fresh = _sample_events()  # same events, later scrape
-    merged, n_new, n_upd, trans = merge_events(
+    merged, new_events, n_upd, trans = merge_events(
         existing=prior_dict,
         fresh=fresh,
         scraped_at="2026-07-09T22:00:00+00:00",
         raw_capture_path="data/raw/2026-07-09/22-00-00_earning.html",
         raw_capture_sha256="b" * 64,
     )
-    assert n_new == 0
+    assert new_events == []
     assert n_upd == 2
     assert merged["p1"].first_seen_at == "2026-07-01T00:00:00+00:00"
     assert merged["p1"].last_seen_at == "2026-07-09T22:00:00+00:00"
