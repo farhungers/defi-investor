@@ -108,6 +108,9 @@ def _product_to_event(prod: dict, *, source: str) -> Optional[EarnEvent]:
     status_raw = prod.get("status")
     status = int(status_raw) if isinstance(status_raw, (int, float)) else None
 
+    raw_apy_list = prod.get("apyList") or []
+    tiers = [t for t in raw_apy_list if isinstance(t, dict)]
+
     return EarnEvent(
         product_id=str(product_id),
         coin_name=str(coin_name),
@@ -115,6 +118,7 @@ def _product_to_event(prod: dict, *, source: str) -> Optional[EarnEvent]:
         max_apy=parse_apy(prod.get("maxApy")),
         min_apy=parse_apy(prod.get("minApy")),
         per_user_cap_underlying=parse_max_step(prod.get("apyList")),
+        tiers=tiers,
         start_time=_epoch_ms_to_iso(prod.get("startTime")),
         period_days=_coerce_int(prod.get("period")),
         lock_model=bool(prod["lockModel"]) if "lockModel" in prod else None,

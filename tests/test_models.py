@@ -59,6 +59,8 @@ def test_earn_event_roundtrip():
         max_apy=365.0,
         min_apy=365.0,
         per_user_cap_underlying=1000.0,
+        tiers=[{"apy": "365.00", "maxStepValue": "1000.00000000",
+                "minStepValue": "0.00000000", "rateLevel": 0}],
         start_time="2026-05-12T07:54:45.770000+00:00",
         status=6,
         sold_out=True,
@@ -78,3 +80,34 @@ def test_earn_event_from_dict_ignores_unknown_keys():
     ev = EarnEvent.from_dict(d)
     assert ev.product_id == "abc"
     assert ev.scraper_version == SCRAPER_VERSION  # default filled
+
+
+def test_earn_event_from_dict_defaults_tiers_when_missing():
+    """Old JSONL rows (pre-0.2.0) have no tiers key; must load as []."""
+    d = {
+        "product_id": "legacy",
+        "coin_name": "OLD",
+        "second_biz_line": "Savings",
+    }
+    ev = EarnEvent.from_dict(d)
+    assert ev.tiers == []
+
+
+def test_earn_event_roundtrip_multi_tier():
+    """USDT-shape ladder must survive to_dict / from_dict."""
+    tiers = [
+        {"apy": "6.16", "maxStepValue": "300.00000000",
+         "minStepValue": "0.00000000", "productId": "x", "rateLevel": 0},
+        {"apy": "1.50", "maxStepValue": "120000000.00000000",
+         "minStepValue": "300.00000000", "productId": "x", "rateLevel": 1},
+    ]
+    ev = EarnEvent(
+        product_id="x",
+        coin_name="USDT",
+        second_biz_line="Savings",
+        max_apy=6.16,
+        min_apy=1.50,
+        tiers=tiers,
+    )
+    ev2 = EarnEvent.from_dict(ev.to_dict())
+    assert ev2.tiers == tiers

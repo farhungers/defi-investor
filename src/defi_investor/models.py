@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 
-SCRAPER_VERSION = "0.1.0"
+SCRAPER_VERSION = "0.2.0"
 
 
 def _epoch_ms_to_iso(ms: Optional[int]) -> Optional[str]:
@@ -36,6 +36,12 @@ class EarnEvent:
     max_apy: Optional[float] = None
     min_apy: Optional[float] = None
     per_user_cap_underlying: Optional[float] = None  # apyList[0].maxStepValue
+
+    # Full tier ladder (raw apyList, keys per Bitget wire: apy, maxStepValue,
+    # minStepValue, productId, rateLevel). Preserved verbatim so downstream
+    # cohorting can split single-tier bait pools from multi-tier stablecoin
+    # ladders. See PHASE_1_PROBE_LOG_v2.md §5.
+    tiers: list[dict] = field(default_factory=list)
 
     # Timing
     start_time: Optional[str] = None  # product creation, ISO 8601 UTC
@@ -68,9 +74,11 @@ class EarnEvent:
     def from_dict(cls, d: dict) -> "EarnEvent":
         # Ignore unknown keys defensively — schema drift future-proofing
         known = {f: d.get(f) for f in cls.__dataclass_fields__ if f in d}
-        # notes may be absent
+        # notes and tiers may be absent in legacy rows (pre-0.2.0)
         if "notes" not in known or known["notes"] is None:
             known["notes"] = []
+        if "tiers" not in known or known["tiers"] is None:
+            known["tiers"] = []
         return cls(**known)
 
 

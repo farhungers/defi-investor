@@ -108,3 +108,38 @@ def test_parse_earning_page_deterministic(html):
     a_map = {e.product_id: e for e in a}
     b_map = {e.product_id: e for e in b}
     assert a_map == b_map
+
+
+def test_parse_earning_page_preserves_lab_single_tier(events):
+    """LAB is a single-tier 365% Savings bait pool."""
+    lab = next(e for e in events if e.coin_name == "LAB")
+    assert isinstance(lab.tiers, list)
+    assert len(lab.tiers) == 1
+    t0 = lab.tiers[0]
+    assert t0["apy"] == "365.00"
+    assert t0["maxStepValue"] == "1000.00000000"
+    assert t0["minStepValue"] == "0.00000000"
+    assert t0["rateLevel"] == 0
+
+
+def test_parse_earning_page_preserves_multi_tier_ladder(events):
+    """At least one product has a 2+ tier ladder (USDT-shape stablecoin savings)."""
+    multi = [e for e in events if len(e.tiers) >= 2]
+    assert multi, "expected at least one multi-tier product in the fixture"
+    # Every tier has the wire keys we depend on downstream
+    for ev in multi:
+        levels = [t.get("rateLevel") for t in ev.tiers]
+        assert levels == sorted(levels), (
+            f"{ev.coin_name} tiers not sorted by rateLevel: {levels}"
+        )
+        for t in ev.tiers:
+            assert set(t.keys()) >= {"apy", "maxStepValue", "minStepValue", "rateLevel"}
+
+
+def test_parse_earning_page_tier_count_distribution(events):
+    """The mix roughly matches probe v2 §5: mostly 1-tier, a handful multi-tier."""
+    from collections import Counter
+    counts = Counter(len(e.tiers) for e in events)
+    # Probe v2 recorded: {0: 33, 1: 359, 2: 8, 3: 2} on 2026-07-09 22:37 UTC
+    assert counts.get(1, 0) >= 100
+    assert (counts.get(2, 0) + counts.get(3, 0)) >= 1

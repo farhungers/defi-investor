@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS earn_events (
     max_apy NUMERIC,
     min_apy NUMERIC,
     per_user_cap_underlying NUMERIC,
+    tiers JSONB NOT NULL DEFAULT '[]'::jsonb,
 
     start_time TIMESTAMPTZ,
     period_days INTEGER,
