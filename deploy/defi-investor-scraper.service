@@ -1,0 +1,26 @@
+[Unit]
+Description=defi-investor Bitget Earn scraper (single run)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/defi-investor
+ExecStart=/bin/bash /opt/defi-investor/deploy/run_scrape.sh
+StandardOutput=journal
+StandardError=journal
+# Hardening — the scraper only needs its own dir + outbound network
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/defi-investor /var/log/defi-investor
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
