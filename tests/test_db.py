@@ -97,6 +97,7 @@ def test_noop_writer_returns_zero_and_does_not_raise():
         raw_capture_sha256="a" * 64,
     )
     assert n2 == 0
+    assert w.fetch_events() == {}
 
 
 # ---------- build_writer ---------------------------------------------------
@@ -206,3 +207,82 @@ def test_log_status_transitions_empty_is_noop():
     )
     assert n == 0
     assert "earn_events_status_log" not in client.tables
+
+
+# ---------- fetch_events pagination -----------------------------------------
+
+class PaginatingFakeQuery:
+    def __init__(self, pages: list[list[dict]]):
+        self._pages = pages
+        self._select: str | None = None
+        self._range: tuple[int, int] | None = None
+
+    def select(self, cols: str) -> "PaginatingFakeQuery":
+        self._select = cols
+        return self
+
+    def range(self, start: int, end: int) -> "PaginatingFakeQuery":
+        self._range = (start, end)
+        return self
+
+    def execute(self) -> FakeExecResult:
+        assert self._range is not None
+        start, end = self._range
+        # Return the page that starts at `start`
+        page_size = end - start + 1
+        idx = start // page_size
+        page = self._pages[idx] if idx < len(self._pages) else []
+        return FakeExecResult(data=page)
+
+
+class PaginatingFakeClient:
+    def __init__(self, pages: list[list[dict]]):
+        self._pages = pages
+
+    def table(self, name: str):
+        return PaginatingFakeQuery(self._pages)
+
+
+def _row(pid: str, tiers: list | None = None) -> dict:
+    return {
+        "product_id": pid,
+        "coin_name": "X",
+        "second_biz_line": "Savings",
+        "first_seen_at": "2026-07-09T22:00:00+00:00",
+        "last_seen_at": "2026-07-09T22:00:00+00:00",
+        "scraper_version": "0.2.0",
+        "tiers": tiers or [],
+        "notes": [],
+        "data_quality": "complete",
+    }
+
+
+def test_fetch_events_single_page():
+    pages = [[_row(f"p{i}") for i in range(3)]]
+    w = SupabaseWriter(client=PaginatingFakeClient(pages))
+    w.FETCH_PAGE_SIZE = 1000
+    got = w.fetch_events()
+    assert set(got.keys()) == {"p0", "p1", "p2"}
+    assert all(isinstance(v, EarnEvent) for v in got.values())
+
+
+def test_fetch_events_paginates():
+    # Two full pages of 2, third partial page of 1 -> should stop after third
+    pages = [
+        [_row("a"), _row("b")],
+        [_row("c"), _row("d")],
+        [_row("e")],
+    ]
+    w = SupabaseWriter(client=PaginatingFakeClient(pages))
+    w.FETCH_PAGE_SIZE = 2
+    got = w.fetch_events()
+    assert set(got.keys()) == {"a", "b", "c", "d", "e"}
+
+
+def test_fetch_events_preserves_tiers():
+    tiers = [{"apy": "6.16", "maxStepValue": "300", "minStepValue": "0",
+              "rateLevel": 0, "productId": "usdt"}]
+    pages = [[_row("usdt", tiers=tiers)]]
+    w = SupabaseWriter(client=PaginatingFakeClient(pages))
+    got = w.fetch_events()
+    assert got["usdt"].tiers == tiers

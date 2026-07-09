@@ -30,6 +30,7 @@ class Writer(Protocol):
         observed_at: str,
         raw_capture_sha256: str,
     ) -> int: ...
+    def fetch_events(self) -> dict[str, EarnEvent]: ...
 
 
 class NoOpWriter:
@@ -49,6 +50,9 @@ class NoOpWriter:
         LOG.debug("NoOpWriter.log_status_transitions: %d transitions discarded",
                   len(transitions))
         return 0
+
+    def fetch_events(self) -> dict[str, EarnEvent]:
+        return {}
 
 
 class SupabaseWriter:
@@ -121,6 +125,35 @@ class SupabaseWriter:
         self._client.table("earn_events_status_log").insert(rows).execute()
         LOG.info("SupabaseWriter.log_status_transitions: %d rows", len(rows))
         return len(rows)
+
+    FETCH_PAGE_SIZE = 1000
+
+    def fetch_events(self) -> dict[str, EarnEvent]:
+        """Rehydrate the catalog from Supabase. Used on ephemeral runners
+        (GitHub Actions) where data/events/*.jsonl doesn't survive.
+
+        Paginated so it scales past the default 1000-row Supabase cap.
+        """
+        catalog: dict[str, EarnEvent] = {}
+        start = 0
+        while True:
+            end = start + self.FETCH_PAGE_SIZE - 1
+            r = (
+                self._client
+                .table("earn_events")
+                .select("*")
+                .range(start, end)
+                .execute()
+            )
+            rows = r.data or []
+            for row in rows:
+                ev = EarnEvent.from_dict(row)
+                catalog[ev.product_id] = ev
+            if len(rows) < self.FETCH_PAGE_SIZE:
+                break
+            start += self.FETCH_PAGE_SIZE
+        LOG.info("SupabaseWriter.fetch_events: hydrated %d rows", len(catalog))
+        return catalog
 
 
 def build_writer(

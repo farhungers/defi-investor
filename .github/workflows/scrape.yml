@@ -1,0 +1,58 @@
+name: scrape
+
+on:
+  schedule:
+    # every 15 minutes. GH Actions cron is best-effort — occasional delays
+    # of 5-15 min under load are expected. Scraper hydrates prior state from
+    # Supabase so lost runs don't corrupt first_seen_at / status_log.
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install
+        run: pip install --quiet -e .
+
+      - name: Scrape
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m defi_investor.scraper
+
+      - name: Upload raw capture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-${{ github.run_id }}
+          path: data/raw/**/*.html
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload catalog snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-${{ github.run_id }}
+          path: data/events/*.jsonl
+          retention-days: 7
+          if-no-files-found: warn

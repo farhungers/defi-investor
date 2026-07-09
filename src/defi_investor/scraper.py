@@ -216,7 +216,19 @@ def run_scrape(
     events = parse_earning_page(html)
     LOG.info("parsed %d events", len(events))
 
+    if writer is None:
+        writer = build_writer()
+
     existing = load_existing_catalog(events_path)
+    if not existing:
+        # Ephemeral runners (GH Actions) lose the local JSONL between runs.
+        # Rehydrate prior state from the writer so first_seen_at and status
+        # transitions stay accurate.
+        existing = writer.fetch_events()
+        if existing:
+            LOG.info("hydrated %d prior events from writer (no local JSONL)",
+                     len(existing))
+
     merged, n_new, n_updated, transitions = merge_events(
         existing,
         events,
@@ -228,8 +240,6 @@ def run_scrape(
     LOG.info("catalog: %d total, %d new, %d updated, %d transitions",
              len(merged), n_new, n_updated, len(transitions))
 
-    if writer is None:
-        writer = build_writer()
     n_upserted = writer.upsert_events(merged.values())
     n_logged = writer.log_status_transitions(
         transitions, observed_at=scraped_at, raw_capture_sha256=sha256

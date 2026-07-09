@@ -176,6 +176,9 @@ def test_full_offline_flow_calls_injected_writer(tmp_path: Path, monkeypatch):
             self.transitions.append((list(transitions), observed_at, raw_capture_sha256))
             return len(transitions)
 
+        def fetch_events(self):
+            return {}
+
     writer = RecordingWriter()
     result = scraper_mod.run_scrape(project_root=tmp_path, writer=writer)
 
