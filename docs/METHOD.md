@@ -103,7 +103,7 @@ All five must pass. If any one fails, halt. Do not iterate.
 
 ## 3. Purged K-Fold CV design
 
-Port `PurgedKFold` from `mm-radar/src/mm_radar/backtest/cv.py`. Adapt for Earn event labels.
+Implemented in `src/defi_investor/backtest/cv.py` from de Prado Ch 7. Purge + embargo primitives are standalone; `PurgedKFold` iterates contiguous test folds.
 
 ### 3.1 Label spans
 
@@ -138,7 +138,7 @@ Per de Prado Ch 14.7.2:
 
 PSR(SR*) = Φ((SR - SR*) * √(n - 1) / √(1 - γ₃*SR + (γ₄ - 1)/4 * SR²))
 
-where γ₃ = skewness of returns, γ₄ = kurtosis. Port from `mm-radar/src/mm_radar/backtest/stats.py`.
+where γ₃ = skewness of returns, γ₄ = kurtosis. Implemented in `src/defi_investor/backtest/stats.py`.
 
 ### 4.2 Deflated Sharpe Ratio
 

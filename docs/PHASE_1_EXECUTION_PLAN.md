@@ -307,7 +307,7 @@ Halt, report, wait for user decision. Do not attempt workarounds without explici
 
 Once Phase 1 completes:
 - Build the labeler consuming events + Bitget perp candles
-- Port `PurgedKFold` and `PSR` from mm-radar
+- Build `PurgedKFold` and PSR in `src/defi_investor/backtest/` (de Prado Ch 7 + Ch 14)
 - Compute triple-barrier labels per event
 - Compute confound tags
 - Halt at n = 30 and report

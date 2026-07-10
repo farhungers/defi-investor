@@ -3,7 +3,7 @@
 Telegram HTML mode accepts: <b> <i> <u> <s> <code> <pre> <blockquote>
 <a href> and \\n. Everything else must be HTML-escaped.
 
-Design (mm-radar inspired, honest to observation stage):
+Design (visual density inspired by user's example cards; observation-honest):
 - Header row: emoji · event type in CAPS · coin · family · star rarity
 - One-line subtitle: what happened, in plain language
 - Multiple sections, each with an emoji heading and an aligned <pre> block

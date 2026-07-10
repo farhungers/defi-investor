@@ -147,7 +147,7 @@ Positive R = hypothesis correct in magnitude. Negative R = hypothesis wrong.
 
 ### 5.5 Uniqueness weights
 
-Multiple Earn events on the same token within a T2 window overlap. Apply de Prado Ch 4.4 uniqueness weights. Port `_avg_uniqueness` from `mm-radar/src/mm_radar/post_mortem.py`. Effective n on the corpus is what feeds the PSR calculation.
+Multiple Earn events on the same token within a T2 window overlap. Apply de Prado Ch 4.4 uniqueness weights. Implemented in `src/defi_investor/backtest/stats.py` as `average_uniqueness`. Effective n on the corpus is what feeds the PSR calculation.
 
 ## 6. Confound-control tags per event
 

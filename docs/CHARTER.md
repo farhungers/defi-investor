@@ -51,7 +51,7 @@ Bitget Earn program parameters (product type, APR, pool size, open time, sold-ou
 - **Features before backtest.** No optimization on labels that do not yet exist.
 - **Second Law: do not research under the influence of a backtest.** Phase 3 result is one-shot. If it fails, halt.
 - **Uniqueness weights.** For overlapping label windows (Earn events on the same token within a window), compute `avg_uniqueness` per de Prado Ch 4.4. Effective n < raw n.
-- **Purged CV with embargo.** Do not train and test on adjacent time windows without a gap. Port `PurgedKFold` from mm-radar.
+- **Purged CV with embargo.** Do not train and test on adjacent time windows without a gap. Implemented in `src/defi_investor/backtest/cv.py` from de Prado Ch 7.
 - **PSR gate.** Report PSR against SR* = 0 and against SR* = 0.5. Do not report annualized Sharpe without PSR.
 - **HHI concentration.** If the edge concentrates on 1 or 2 outlier events, kill it. Diversified edges only.
 - **Purged corpus.** Persist events to Supabase, not JSONL, so the catalog survives.

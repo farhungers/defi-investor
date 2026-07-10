@@ -129,8 +129,8 @@ Then hand off to user for Phase 2 approval.
 
 ## What Phase 2 looks like (not your problem yet)
 
-- Port `PurgedKFold` from mm-radar
-- Port PSR + HHI from mm-radar
+- Build `PurgedKFold` in `src/defi_investor/backtest/cv.py` (de Prado Ch 7)
+- Build PSR + HHI in `src/defi_investor/backtest/stats.py` (de Prado Ch 14)
 - Build labeler that consumes event rows and price candles, emits triple-barrier labels
 - Compute confound tags per event
 - Ship the primary label to Supabase

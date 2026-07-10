@@ -39,12 +39,12 @@ Read in this order:
 
 Sign your work as **Vault** when working on this project. `Argus` is mm-radar. `Polaris` is FAR. `Scrivener` is WriterProject. Give this project its own name so the user can tell you apart across projects.
 
-## Discipline stack (inherited from mm-radar's de Prado adoption)
+## Discipline stack (de Prado *Advances in Financial Machine Learning*)
 
 1. **Features before backtest.** No optimization loops on unlabeled data. Define the label schema, collect data, then measure.
 2. **Second Law: do not research under the influence of a backtest.** If you see a preliminary result, do not iterate on it. Log it, walk away, come back next phase.
-3. **Purged CV with embargo.** For any statistical claim on time-series labels, use `PurgedKFold` (port from `mm-radar/src/mm_radar/backtest/cv.py` if useful).
-4. **PSR / DSR gate** before declaring an edge. Reference `mm-radar/src/mm_radar/backtest/stats.py`.
+3. **Purged CV with embargo.** For any statistical claim on time-series labels, use `PurgedKFold` in `src/defi_investor/backtest/cv.py` (built from de Prado Ch 7).
+4. **PSR / DSR gate** before declaring an edge. Implemented in `src/defi_investor/backtest/stats.py` (built from de Prado Ch 14 and Bailey & de Prado 2012).
 5. **Corpus discipline.** Persist the event catalog to Supabase (new schema, not mm-radar's), not to ephemeral JSONL, so the corpus survives runner recycling.
 6. **Kill criteria live in `CHARTER.md`.** If any is tripped, stop and report. Do not "just try one more feature."
 
