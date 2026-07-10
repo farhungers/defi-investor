@@ -49,7 +49,7 @@ from .models import EarnEvent, coin_to_symbol
 
 LOG = logging.getLogger("defi_investor.labeler")
 
-LABELER_VERSION = "0.2.0"
+LABELER_VERSION = "0.2.1"
 
 DEFAULT_HORIZON_DAYS = 7
 DEFAULT_K_UP = 2.0

@@ -41,24 +41,35 @@ from .candles import fetch_candles
 
 LOG = logging.getLogger("defi_investor.confounds")
 
-# Coins listed for years: use daily bars, big lookback. ~2500 daily bars covers
-# from 2019 to now, but Bitget usually caps history. We just fetch 1000 daily
-# bars from a very old epoch and take the earliest.
-_LISTING_LOOKBACK_MS = int(datetime(2019, 1, 1, tzinfo=timezone.utc).timestamp() * 1000)
+# Bitget caps 1D candle queries at 90 days per request. That's fine for our
+# purpose — the primary consumer is `within_7d_of_tge` and the Phase 3
+# confound split at `age >= 30d`. Anything older than 90 days is capped and
+# returned as `_LISTING_AGE_CAP` so downstream splits still work.
+_LISTING_AGE_WINDOW_DAYS = 89   # stay comfortably under the 90-day cap
+_LISTING_AGE_CAP = 90           # sentinel: "listed >= 90 days ago"
 
 
 def listing_age_days(coin_name: str, at_ts: datetime, *,
                      client: Optional[httpx.Client] = None) -> Optional[int]:
-    """Days between the coin's earliest Bitget candle and `at_ts`.
+    """Days between the coin's earliest Bitget candle in the 90-day window
+    preceding `at_ts` and `at_ts` itself.
 
-    Uses daily granularity to keep the request cheap. Returns None if
-    neither perp nor spot exists.
+    Two outcomes worth knowing:
+
+    - Earliest bar strictly inside the window → precise age, in [0, 89].
+    - Earliest bar sits at (or before) the window start → coin is ≥ 90 days
+      old; we return `_LISTING_AGE_CAP` (=90). The Phase 3 splits only care
+      about the >= 30d boundary, so this sentinel is functionally equivalent
+      to any larger age.
+
+    Returns None only when neither perp nor spot has any bar in the window.
     """
     symbol = f"{coin_name.upper()}USDT"
     end_ms = int(at_ts.timestamp() * 1000)
+    start_ms = int((at_ts - timedelta(days=_LISTING_AGE_WINDOW_DAYS)).timestamp() * 1000)
     df, prov = fetch_candles(
         symbol=symbol,
-        start_ms=_LISTING_LOOKBACK_MS,
+        start_ms=start_ms,
         end_ms=end_ms,
         granularity="1D",
         client=client,
@@ -68,6 +79,8 @@ def listing_age_days(coin_name: str, at_ts: datetime, *,
         return None
     first_ts = df.index[0].to_pydatetime()
     delta_d = (at_ts - first_ts).total_seconds() / 86400.0
+    if delta_d >= _LISTING_AGE_WINDOW_DAYS - 0.5:
+        return _LISTING_AGE_CAP
     return max(0, int(delta_d))
 
 
