@@ -32,8 +32,16 @@ def test_event_features_stable_key_set():
         "period_type", "time_to_sold_out_hours", "days_since_start_time",
         "cohort_size", "cohort_n_active", "cohort_n_sold",
         "cohort_distinct_coins", "cohort_median_life_d",
+        "prior_earn_events_for_coin", "is_repeat_coin",
     }
     assert set(f.keys()) == expected
+
+
+def test_repeat_coin_flag_from_prior_count():
+    ev = _lab()
+    assert event_features(ev, prior_earn_events_for_coin=0)["is_repeat_coin"] is False
+    assert event_features(ev, prior_earn_events_for_coin=3)["is_repeat_coin"] is True
+    assert event_features(ev, prior_earn_events_for_coin=None)["is_repeat_coin"] is False
 
 
 def test_time_to_sold_out_from_lab_dates():

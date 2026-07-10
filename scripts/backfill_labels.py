@@ -25,11 +25,14 @@ import os
 import sys
 from dataclasses import asdict
 from datetime import datetime, timezone
+from typing import Optional
 
 import httpx
 from dotenv import load_dotenv
 from supabase import create_client
 
+from defi_investor.confounds import compute_confounds
+from defi_investor.context import cohort_context
 from defi_investor.features import event_features
 from defi_investor.labeler import (
     DEFAULT_HORIZON_DAYS, DEFAULT_K_DOWN, DEFAULT_K_UP, LABELER_VERSION,
@@ -87,6 +90,24 @@ def _stale_anchor_row(event: EarnEvent) -> LabelRow:
         candles_provenance={},
         computed_at=datetime.now(timezone.utc).isoformat(),
     )
+
+
+def _prior_earn_count_for_coin(sb, coin_name: str, before_iso: str) -> Optional[int]:
+    """Number of Earn products for `coin_name` first_seen before `before_iso`."""
+    if not before_iso:
+        return None
+    try:
+        r = (
+            sb.table("earn_events")
+            .select("product_id", count="exact")
+            .eq("coin_name", coin_name)
+            .lt("first_seen_at", before_iso)
+            .execute()
+        )
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("prior-count query failed for %s: %s", coin_name, e)
+        return None
+    return r.count
 
 
 def _upsert(sb, row_dict: dict) -> None:
@@ -157,9 +178,35 @@ def main() -> int:
                 # Guard rail: event not eligible at all (e.g. not sold_out)
                 continue
 
-            features = event_features(event)  # cohort ctx computed later
+            # Cohort + repeat-coin features
+            cohort_ctx = None
+            try:
+                cohort_ctx = cohort_context(event, sb)
+            except Exception as e:  # noqa: BLE001
+                LOG.warning("cohort_context failed for %s: %s", product_id, e)
+            prior_count = _prior_earn_count_for_coin(
+                sb, event.coin_name, event.first_seen_at or event.start_time or ""
+            )
+
+            features = event_features(
+                event, cohort_ctx=cohort_ctx,
+                prior_earn_events_for_coin=prior_count,
+            )
+
+            # Confound tags (best-effort per METHOD §1)
+            confounds = compute_confounds(
+                event.coin_name, label_row.anchor_ts, client=candles_client,
+            )
+
             payload = asdict(label_row)
             payload["features"] = features
+            payload.update({
+                "bitget_listing_age_days": confounds["bitget_listing_age_days"],
+                "within_7d_of_tge": confounds["within_7d_of_tge"],
+                "btc_ret_7d_prior": confounds["btc_ret_7d_prior"],
+                "perp_vol_change_prior_24h": confounds["perp_vol_change_prior_24h"],
+            })
+
             if not payload["anchor_ts"]:
                 LOG.warning("skipping %s — empty anchor_ts", product_id)
                 continue

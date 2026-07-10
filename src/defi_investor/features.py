@@ -39,13 +39,17 @@ def _delta_hours(a: Optional[str], b: Optional[str]) -> Optional[float]:
 
 
 def event_features(event: EarnEvent,
-                   cohort_ctx: Optional[dict] = None) -> dict:
+                   cohort_ctx: Optional[dict] = None,
+                   *,
+                   prior_earn_events_for_coin: Optional[int] = None) -> dict:
     """Return a JSON-safe dict of features known at the anchor.
 
     Args:
         event: sold-out (or resolved) EarnEvent.
         cohort_ctx: optional dict from `defi_investor.context.cohort_context`
             keyed on the same event. If None, cohort features are None.
+        prior_earn_events_for_coin: count of Earn events observed for this
+            coin BEFORE the current event. None if not yet computed.
 
     Returns:
         Dict with a stable key set. Feature values may be None when the
@@ -78,4 +82,9 @@ def event_features(event: EarnEvent,
         "cohort_n_sold": cohort_ctx.get("n_sold"),
         "cohort_distinct_coins": cohort_ctx.get("distinct_coins"),
         "cohort_median_life_d": cohort_ctx.get("median_life_d"),
+        "prior_earn_events_for_coin": prior_earn_events_for_coin,
+        "is_repeat_coin": (
+            prior_earn_events_for_coin is not None
+            and prior_earn_events_for_coin > 0
+        ),
     }
