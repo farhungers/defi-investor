@@ -8,23 +8,32 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 
 **Do not touch mm-radar from this project.** Sibling. Different discipline stack.
 
-## Current state (as of 2026-07-10, end of Vault Session 2)
+## Current state (as of 2026-07-10, Phase 2 Session 1 close)
 
-**Phase: 1 — Tasks 1-6 + 8 shipped. 30-day pilot burning.** Scraper is live in GitHub Actions on `*/15` cron writing to Supabase. Tier ladder (`apyList`) preserved as JSONB. 46/46 tests green. Repo pushed private to `github.com/farhungers/defi-investor`.
+**Phase: 2 — infrastructure fully in place, pilot burning for labels.** Phase 1 scraper live on `*/15` GH Actions cron. Phase 2 labeling + confound + gate-report + dashboard pipeline shipped and green. 134/134 tests. 15 commits pushed to `github.com/farhungers/defi-investor` (private, `main` at `6ff1277`).
 
 Component status:
-- Task 5 Supabase: LIVE. 399 rows in `earn_events`, LAB present, status log accumulating.
-- Task 6 scheduler: GH Actions (Option B), `.github/workflows/scrape.yml`. First run at 2026-07-09 23:20 UTC hydrated 399 prior rows from Supabase, upserted 399, artifacts uploaded.
-- Task 8 detail probe: DONE, list-only path confirmed viable. Detail URLs 404, pool size not public. Tier ladder was hidden in list SSR and is now captured (schema v0.2.0).
+- Scraper (Phase 1): LIVE. `earn_events` ≈399 rows, `earn_events_status_log` accumulating 2→6 transitions.
+- Telegram alerts: LIVE. `@Defiinvestor_Bot` sends observation-only rich cards on new listings, sold-outs, re-opens, stalls, drift.
+- Labeler (Phase 2): LIVE, nightly. `earn_event_labels` at 104 rows across 4 labeler versions. `LABELER_VERSION = "0.2.1"` current.
+- Backtest primitives: BUILT FROM SCRATCH from de Prado Ch 7 (purged CV) + Ch 14 (PSR / HHI / uniqueness). No sibling reads.
+- Gate report: `scripts/gate_report.py` runnable today, will print meaningful primary universe once first 7-day windows close (~2026-07-16 onward).
 
-**Immediate blockers:** 48h uptime accumulation before B3 (monitoring). Nothing to ship right now that isn't gated on real pilot data.
+**Immediate next-session behavior:** WATCH, DO NOT TOUCH. Second Law per CHARTER §5. Real Phase 3 gate call is n ≥ 30 primary universe. Realistic ETA 2-4 weeks.
 
-**Next tasks:**
-1. Build `scripts/uptime_check.py` + `.github/workflows/uptime.yml`. Alert channel = GH's default email on failed workflow (no Telegram bot needed for pilot).
-2. Watch Actions success rate and Supabase `last_seen_at` freshness for 48h.
-3. After 30 days: `docs/PHASE_1_COMPLETION.md`, open Phase 2.
+**Read these before doing anything:**
+- `docs/PHASE_2_SESSION_1_LOG.md` — freshest handoff.
+- `docs/PHASE_2_PLAN.md` — the plan.
+- `docs/METHOD.md` — the discipline (confounds, gates, sign conventions).
+- `docs/CHARTER.md` — kill criteria.
+- Memory: `feedback_no_borrowing_from_siblings.md`, `feedback_no_premature_signals.md`. Non-negotiable.
 
-See `docs/PHASE_1_LOG.md` (Session 1), `docs/PHASE_1_SESSION_2_LOG.md` (Session 2), and `docs/PHASE_1_EXECUTION_PLAN.md` (master plan).
+**If genuinely impatient, order of value:**
+1. Add OI snapshot step to the scraper cron (unlocks a real confound tag from now on).
+2. Apply per-event uniqueness weights inside `gate_report.py`.
+3. Wire a paid TOTAL3 data source.
+
+Everything else past that is pilot patience.
 
 Read in this order:
 1. `README.md` — vision + hypothesis in plain language
