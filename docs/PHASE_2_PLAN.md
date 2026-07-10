@@ -17,7 +17,7 @@ Everything else Phase 2 builds is scaffolding for that.
 
 **Anchor timestamp:** `sold_out_first_seen_at` — the first scrape where the product's status flipped to 6. This is the observable moment saturation is signaled to the market. NOT `start_time` — start_time is pool creation, which happens hours to days before demand actually saturates.
 
-**Anchor precision cap:** cadence-limited. At 15-min scrape cadence, `sold_out_first_seen_at` is accurate to ±15 min. Log the precision on every event.
+**Anchor precision cap:** cadence-limited. At 15-min scrape cadence, `sold_out_first_seen_at` is accurate to ±15 min — but only for events where we OBSERVED the 2→6 transition (row in `earn_events_status_log`). Events that were already sold-out at the first scrape have unknown true saturation time and are tagged `unlabelable_reason = "stale_anchor"` by the backfill script (METHOD §1.7.1). Excluded from primary; visible in the corpus for provenance.
 
 **Secondary universes (Phase 2.5, if primary has weak signal):** `PosStaking` high-APR pools, `Savings` at 20% ≤ APR < 50%. Report separately per `METHOD.md` §5 — do not merge cohorts to inflate n.
 

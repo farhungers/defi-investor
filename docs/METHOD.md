@@ -55,6 +55,14 @@ The Earn signal, if it exists, is entangled with several other forces that also 
 
 **Residual risk.** Regime buckets thin out the effective n. Minimum n per bucket for a claim = 20 per de Prado Ch 7.
 
+### 1.7.1 Stale anchor from pre-existing sold-outs
+
+**The problem.** For events that were already `sold_out=true` at the moment the scraper first observed them, `sold_out_first_seen_at` reflects "when we discovered it," not "when the pool actually saturated." The label window then measures residual price behavior N days AFTER discovery, not fresh reaction to saturation. This is a systematic bias that inflates the effective anchor-to-event lag by an unknown amount.
+
+**The control.** Only events for which we recorded a status transition into 6 in `earn_events_status_log` are eligible for the primary label calc. Their anchor precision is ±scrape cadence (15 min). Every other sold-out event gets tagged `unlabelable_reason = "stale_anchor"` by the backfill script and is excluded from the primary corpus.
+
+**Residual risk.** The first days of the pilot inherit a batch of already-sold-out pools that will never enter the primary corpus. Effective n at Phase 3 is the count of 2→6 transitions we witnessed live, not the count of sold-out rows in `earn_events`.
+
 ### 1.7 Look-ahead bias in APR field
 
 **The problem.** APR may be adjusted by Bitget after pool close. If our scrape happens post-close, we might read a different APR than users saw at open.
