@@ -1,0 +1,35 @@
+name: label
+
+on:
+  schedule:
+    # Nightly at 04:00 UTC — well after most Bitget churn settles.
+    - cron: '0 4 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: label
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: pip install --quiet -e .
+
+      - name: Backfill labels
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/backfill_labels.py
