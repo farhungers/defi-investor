@@ -19,6 +19,7 @@ from typing import Iterable, Optional, Protocol
 import httpx
 
 from . import cards
+from .context import cohort_context
 from .models import EarnEvent
 
 
@@ -61,13 +62,20 @@ class TelegramNotifier:
     """Sends HTML-formatted cards to a single chat."""
 
     def __init__(self, bot_token: str, chat_id: str, *,
-                 client: Optional[httpx.Client] = None, timeout: float = 10.0):
+                 client: Optional[httpx.Client] = None, timeout: float = 10.0,
+                 sb_client=None):
         if not bot_token or not chat_id:
             raise ValueError("TelegramNotifier requires bot_token + chat_id")
         self._bot_token = bot_token
         self._chat_id = str(chat_id)
         self._client = client
         self._timeout = timeout
+        self._sb_client = sb_client  # optional; used only for cohort context
+
+    def _ctx(self, event: EarnEvent) -> Optional[dict]:
+        if self._sb_client is None:
+            return None
+        return cohort_context(event, self._sb_client)
 
     def _send_html(self, html_body: str) -> bool:
         if len(html_body) > _TG_MAX_LEN:
@@ -100,13 +108,19 @@ class TelegramNotifier:
                 client.close()
 
     def notify_new_listing(self, event: EarnEvent, *, observed_at: str) -> bool:
-        return self._send_html(cards.new_listing_card(event, observed_at=observed_at))
+        return self._send_html(cards.new_listing_card(
+            event, observed_at=observed_at, ctx=self._ctx(event),
+        ))
 
     def notify_sold_out(self, event: EarnEvent, *, observed_at: str) -> bool:
-        return self._send_html(cards.sold_out_card(event, observed_at=observed_at))
+        return self._send_html(cards.sold_out_card(
+            event, observed_at=observed_at, ctx=self._ctx(event),
+        ))
 
     def notify_reopened(self, event: EarnEvent, *, observed_at: str) -> bool:
-        return self._send_html(cards.reopened_card(event, observed_at=observed_at))
+        return self._send_html(cards.reopened_card(
+            event, observed_at=observed_at, ctx=self._ctx(event),
+        ))
 
     def notify_stall(self, *, last_scrape_at: str, minutes_ago: int,
                      threshold_min: int, actions_url: Optional[str] = None) -> bool:
@@ -127,14 +141,19 @@ class TelegramNotifier:
 
 
 def build_notifier(bot_token: Optional[str] = None,
-                   chat_id: Optional[str] = None) -> Notifier:
-    """SupabaseWriter's cousin: real notifier if both creds present, NoOp otherwise."""
+                   chat_id: Optional[str] = None,
+                   sb_client=None) -> Notifier:
+    """SupabaseWriter's cousin: real notifier if both creds present, NoOp otherwise.
+
+    `sb_client` is optional — if passed, cards get cohort context. Scraper
+    passes the SupabaseWriter's underlying client so we don't open a second one.
+    """
     bot_token = bot_token or os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID")
     if not bot_token or not chat_id:
         LOG.info("Telegram credentials not set — using NoOpNotifier")
         return NoOpNotifier()
-    return TelegramNotifier(bot_token=bot_token, chat_id=chat_id)
+    return TelegramNotifier(bot_token=bot_token, chat_id=chat_id, sb_client=sb_client)
 
 
 # ---------- Filtering policy ------------------------------------------------

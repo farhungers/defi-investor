@@ -49,7 +49,7 @@ def _usdt() -> EarnEvent:
 
 def test_sold_out_card_lab_shape():
     c = sold_out_card(_lab(), observed_at="2026-07-10T02:35:00+00:00")
-    assert "Sold out" in c
+    assert "SOLD OUT" in c
     assert "LAB" in c
     assert "Savings" in c
     assert "365%" in c
@@ -58,29 +58,37 @@ def test_sold_out_card_lab_shape():
     assert "1438002720001814528" in c
     assert "<b>" in c and "</b>" in c
     assert "<pre>" in c
+    assert "STRUCTURE" in c
+    assert "TIMING" in c
+    assert "WHY THIS IS INTERESTING" in c
 
 
-def test_sold_out_card_includes_days_open():
+def test_sold_out_card_stars_for_high_apr():
     c = sold_out_card(_lab(), observed_at="2026-07-10T02:35:00+00:00")
-    # 2026-05-12 to 2026-07-10 = 58 days
-    assert "58d" in c or "59d" in c
+    # LAB is 365% APR — top tier → 5 stars
+    assert "★★★★★" in c
 
 
 def test_reopened_card_uses_green_marker():
     c = reopened_card(_lab(), observed_at="2026-07-10T02:35:00+00:00")
     assert "🟢" in c
-    assert "Re-opened" in c
+    assert "RE-OPENED" in c
     assert "1438002720001814528" in c
+    # always 4 stars for a re-open
+    assert "★★★★☆" in c
 
 
 def test_new_listing_card_multi_tier_summary():
     c = new_listing_card(_usdt(), observed_at="2026-07-10T02:35:00+00:00")
-    assert "New listing" in c
+    assert "NEW LISTING" in c
     assert "USDT" in c
-    # multi-tier structure surfaced
+    # multi-tier structure surfaced in the STRUCTURE row AND the TIER LADDER section
     assert "6.16%" in c
     assert "1.50%" in c
     assert "2-tier" in c
+    assert "TIER LADDER" in c
+    # L0 and L1 labels present
+    assert "L0" in c and "L1" in c
 
 
 def test_stall_card_has_actions_link_when_url_given():
@@ -90,10 +98,11 @@ def test_stall_card_has_actions_link_when_url_given():
         threshold_min=30,
         actions_url="https://github.com/farhungers/defi-investor/actions",
     )
-    assert "Scraper stall" in c
+    assert "SCRAPER STALL" in c
     assert "42m ago" in c
     assert "farhungers/defi-investor" in c
     assert '<a href=' in c
+    assert "WHAT TO CHECK" in c
 
 
 def test_stall_card_no_link_when_url_absent():
@@ -111,10 +120,33 @@ def test_parser_drift_card_lists_coins():
         drift_count=3,
         observed_at="2026-07-10T02:35:00+00:00",
     )
-    assert "Parser drift" in c
+    assert "PARSER DRIFT" in c
     assert "3" in c
     assert "ABC" in c
     assert "DEF" in c
+    assert "WHAT THIS MEANS" in c
+
+
+def test_sold_out_card_with_cohort_ctx():
+    ctx = {
+        "cohort_size": 6,
+        "n_active": 3,
+        "n_sold": 3,
+        "median_life_d": 42.0,
+        "this_life_d": 58.0,
+        "band_lo": 357.7,
+        "band_hi": 372.3,
+        "distinct_coins": 5,
+    }
+    c = sold_out_card(_lab(), observed_at="2026-07-10T02:35:00+00:00", ctx=ctx)
+    assert "COHORT" in c
+    assert "6 rows" in c
+    assert "42" in c  # median lifespan
+
+
+def test_sold_out_card_without_cohort_ctx_omits_section():
+    c = sold_out_card(_lab(), observed_at="2026-07-10T02:35:00+00:00", ctx=None)
+    assert "COHORT" not in c
 
 
 def test_parser_drift_card_truncates_long_coin_list():

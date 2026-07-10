@@ -92,7 +92,7 @@ def test_telegram_notifier_sends_html_payload():
     assert call["data"]["parse_mode"] == "HTML"
     assert call["data"]["disable_web_page_preview"] is True
     assert "LAB" in call["data"]["text"]
-    assert "Sold out" in call["data"]["text"]
+    assert "SOLD OUT" in call["data"]["text"]
 
 
 def test_telegram_notifier_returns_false_on_non_200():

@@ -263,7 +263,10 @@ def run_scrape(
     # bootstrapped (either from JSONL or from writer hydration), alerts flow.
     alerts_sent = {"new": 0, "sold_out": 0, "reopened": 0}
     if notifier is None:
-        notifier = build_notifier()
+        # Pass the writer's Supabase client (if any) so cards can query cohort
+        # context without opening a second connection.
+        sb = getattr(writer, "_client", None)
+        notifier = build_notifier(sb_client=sb)
     if existing:
         # Look up the event objects for each transition so cards get full context
         transitions_with_events = [

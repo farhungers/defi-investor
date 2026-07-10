@@ -35,7 +35,8 @@ def main() -> int:
     r = sb.table("earn_events").select("*").eq("coin_name", "USDT").execute()
     usdt = EarnEvent.from_dict(r.data[0])
 
-    notifier = TelegramNotifier(bot_token=bot, chat_id=chat)
+    # Pass sb so cards get real cohort context.
+    notifier = TelegramNotifier(bot_token=bot, chat_id=chat, sb_client=sb)
     now_iso = datetime.now(timezone.utc).isoformat()
     actions_url = "https://github.com/farhungers/defi-investor/actions"
 
