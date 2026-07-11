@@ -8,30 +8,32 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 
 **Do not touch mm-radar from this project.** Sibling. Different discipline stack.
 
-## Current state (as of 2026-07-10, Phase 2 Session 1 close)
+## Current state (as of 2026-07-11, Phase 2 Session 2 close)
 
-**Phase: 2 — infrastructure fully in place, pilot burning for labels.** Phase 1 scraper live on `*/15` GH Actions cron. Phase 2 labeling + confound + gate-report + dashboard pipeline shipped and green. 134/134 tests. 15 commits pushed to `github.com/farhungers/defi-investor` (private, `main` at `6ff1277`).
+**Phase: 2 — infrastructure fully in place + OI forward-collection wired, pilot burning for labels.** Phase 1 scraper live on `*/15` GH Actions cron. Phase 2 labeling + confound + gate-report + dashboard pipeline shipped and green. OI snapshot cron piggybacks on the scraper as of this session. 157/157 tests. Working tree has uncommitted OI-snapshot changes.
 
 Component status:
 - Scraper (Phase 1): LIVE. `earn_events` ≈399 rows, `earn_events_status_log` accumulating 2→6 transitions.
 - Telegram alerts: LIVE. `@Defiinvestor_Bot` sends observation-only rich cards on new listings, sold-outs, re-opens, stalls, drift.
 - Labeler (Phase 2): LIVE, nightly. `earn_event_labels` at 104 rows across 4 labeler versions. `LABELER_VERSION = "0.2.1"` current.
+- OI snapshots (Phase 2 session 2): CODE READY, needs migration 005 applied and next scraper cron to fire. Populates `earn_oi_snapshots` for the `perp_oi_pct_change_prior_24h` confound.
 - Backtest primitives: BUILT FROM SCRATCH from de Prado Ch 7 (purged CV) + Ch 14 (PSR / HHI / uniqueness). No sibling reads.
 - Gate report: `scripts/gate_report.py` runnable today, will print meaningful primary universe once first 7-day windows close (~2026-07-16 onward).
+
+**Operator to-do before next scrape cron:** apply `db/migrations/005_oi_snapshots.sql` to Supabase. Until then the scraper logs a non-fatal warning and no OI rows land.
 
 **Immediate next-session behavior:** WATCH, DO NOT TOUCH. Second Law per CHARTER §5. Real Phase 3 gate call is n ≥ 30 primary universe. Realistic ETA 2-4 weeks.
 
 **Read these before doing anything:**
-- `docs/PHASE_2_SESSION_1_LOG.md` — freshest handoff.
+- `docs/PHASE_2_SESSION_2_LOG.md` — freshest handoff.
+- `docs/PHASE_2_SESSION_1_LOG.md` — prior session.
 - `docs/PHASE_2_PLAN.md` — the plan.
 - `docs/METHOD.md` — the discipline (confounds, gates, sign conventions).
 - `docs/CHARTER.md` — kill criteria.
 - Memory: `feedback_no_borrowing_from_siblings.md`, `feedback_no_premature_signals.md`. Non-negotiable.
 
 **If genuinely impatient, order of value:**
-1. Add OI snapshot step to the scraper cron (unlocks a real confound tag from now on).
-2. Apply per-event uniqueness weights inside `gate_report.py`.
-3. Wire a paid TOTAL3 data source.
+1. Wire a paid TOTAL3 data source (requires user approval to spend money).
 
 Everything else past that is pilot patience.
 

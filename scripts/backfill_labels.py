@@ -193,9 +193,12 @@ def main() -> int:
                 prior_earn_events_for_coin=prior_count,
             )
 
-            # Confound tags (best-effort per METHOD §1)
+            # Confound tags (best-effort per METHOD §1). Pass sb_client so
+            # the forward-collected OI-snapshot confound is populated when
+            # ≥24h of snapshots exist for this coin.
             confounds = compute_confounds(
-                event.coin_name, label_row.anchor_ts, client=candles_client,
+                event.coin_name, label_row.anchor_ts,
+                client=candles_client, sb_client=sb,
             )
 
             payload = asdict(label_row)
@@ -205,6 +208,7 @@ def main() -> int:
                 "within_7d_of_tge": confounds["within_7d_of_tge"],
                 "btc_ret_7d_prior": confounds["btc_ret_7d_prior"],
                 "perp_vol_change_prior_24h": confounds["perp_vol_change_prior_24h"],
+                "perp_oi_pct_change_prior_24h": confounds["perp_oi_pct_change_prior_24h"],
             })
 
             if not payload["anchor_ts"]:

@@ -84,7 +84,7 @@ def _kurt(values: list[float], mean: float, stdev: float) -> float:
 # ---------- core APIs ------------------------------------------------------
 
 
-def psr(*, sharpe: float, n: int, skew: float, kurt: float,
+def psr(*, sharpe: float, n: float, skew: float, kurt: float,
         benchmark_sr: float = 0.0) -> float:
     """Probabilistic Sharpe Ratio — P(true SR > benchmark_sr) given the
     observed sample statistics.
@@ -97,9 +97,13 @@ def psr(*, sharpe: float, n: int, skew: float, kurt: float,
     Returns a value in [0, 1]. Passes the Phase 3 gate (METHOD §2.4) at
     PSR ≥ 0.95.
 
+    `n` accepts a float so callers can pass de Prado Ch 4.4 effective
+    sample size (raw_n · average_uniqueness) for overlap-adjusted PSR.
+    Integers still work — the formula only needs a positive real ≥ 2.
+
     Guardrails:
-    - n < 2 → return 0.5 ("cannot tell"). PSR is meaningless on a single
-      observation and the honest report is indifference.
+    - n < 2 → return 0.5 ("cannot tell"). PSR is meaningless below two
+      effective observations and the honest report is indifference.
     - Denominator variance ≤ 0 → return 0.5. Happens when negative skew
       combined with a very large Sharpe implies fat left tail heavier
       than the SR can support. Refuse to report a spurious near-1 number.

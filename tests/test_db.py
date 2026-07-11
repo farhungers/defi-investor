@@ -209,6 +209,54 @@ def test_log_status_transitions_empty_is_noop():
     assert "earn_events_status_log" not in client.tables
 
 
+# ---------- insert_oi_snapshots -------------------------------------------
+
+def test_noop_insert_oi_snapshots_returns_zero():
+    assert NoOpWriter().insert_oi_snapshots(
+        [{"coin_name": "LAB", "snapped_at": "2026-07-11T00:00:00+00:00",
+          "symbol": "LABUSDT", "market": "perp", "oi_base": 1.0,
+          "http_status": 200, "error": None}]
+    ) == 0
+
+
+def test_insert_oi_snapshots_uses_composite_on_conflict():
+    client = FakeClient()
+    w = SupabaseWriter(client=client)
+    rows = [
+        {"coin_name": "LAB", "snapped_at": "2026-07-11T00:00:00+00:00",
+         "symbol": "LABUSDT", "market": "perp", "oi_base": 10.0,
+         "http_status": 200, "error": None},
+        {"coin_name": "OGN", "snapped_at": "2026-07-11T00:00:00+00:00",
+         "symbol": "OGNUSDT", "market": "perp", "oi_base": 20.0,
+         "http_status": 200, "error": None},
+    ]
+    n = w.insert_oi_snapshots(rows)
+    assert n == 2
+    calls = client.tables["earn_oi_snapshots"].calls
+    assert len(calls) == 1
+    assert calls[0]["op"] == "upsert"
+    assert calls[0]["on_conflict"] == "coin_name,snapped_at"
+
+
+def test_insert_oi_snapshots_batches():
+    client = FakeClient()
+    w = SupabaseWriter(client=client)
+    w.OI_UPSERT_BATCH_SIZE = 3
+    rows = [{"coin_name": f"c{i}", "snapped_at": "2026-07-11T00:00:00+00:00",
+             "symbol": f"c{i}USDT", "market": "perp", "oi_base": float(i),
+             "http_status": 200, "error": None} for i in range(7)]
+    n = w.insert_oi_snapshots(rows)
+    assert n == 7
+    assert [len(c["rows"]) for c in client.tables["earn_oi_snapshots"].calls] == [3, 3, 1]
+
+
+def test_insert_oi_snapshots_empty_is_noop():
+    client = FakeClient()
+    w = SupabaseWriter(client=client)
+    assert w.insert_oi_snapshots([]) == 0
+    assert "earn_oi_snapshots" not in client.tables
+
+
 # ---------- fetch_events pagination -----------------------------------------
 
 class PaginatingFakeQuery:

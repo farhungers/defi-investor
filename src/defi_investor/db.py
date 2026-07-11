@@ -31,6 +31,7 @@ class Writer(Protocol):
         raw_capture_sha256: str,
     ) -> int: ...
     def fetch_events(self) -> dict[str, EarnEvent]: ...
+    def insert_oi_snapshots(self, rows: Sequence[dict]) -> int: ...
 
 
 class NoOpWriter:
@@ -53,6 +54,10 @@ class NoOpWriter:
 
     def fetch_events(self) -> dict[str, EarnEvent]:
         return {}
+
+    def insert_oi_snapshots(self, rows: Sequence[dict]) -> int:
+        LOG.debug("NoOpWriter.insert_oi_snapshots: %d rows discarded", len(rows))
+        return 0
 
 
 class SupabaseWriter:
@@ -154,6 +159,29 @@ class SupabaseWriter:
             start += self.FETCH_PAGE_SIZE
         LOG.info("SupabaseWriter.fetch_events: hydrated %d rows", len(catalog))
         return catalog
+
+    OI_UPSERT_BATCH_SIZE = 500
+
+    def insert_oi_snapshots(self, rows: Sequence[dict]) -> int:
+        """Upsert OI snapshots on the (coin_name, snapped_at) composite PK.
+
+        Upsert (not plain insert) so a re-run inside the same cron minute
+        stays idempotent — the second write overwrites with an equal row.
+        """
+        if not rows:
+            return 0
+        n = 0
+        for start in range(0, len(rows), self.OI_UPSERT_BATCH_SIZE):
+            batch = list(rows[start:start + self.OI_UPSERT_BATCH_SIZE])
+            (
+                self._client
+                .table("earn_oi_snapshots")
+                .upsert(batch, on_conflict="coin_name,snapped_at")
+                .execute()
+            )
+            n += len(batch)
+        LOG.info("SupabaseWriter.insert_oi_snapshots: %d rows", n)
+        return n
 
 
 def build_writer(

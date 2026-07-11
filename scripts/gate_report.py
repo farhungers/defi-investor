@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 from supabase import create_client
 
 from defi_investor.backtest.cv import PurgedKFold
-from defi_investor.backtest.stats import average_uniqueness, bet_stats, hhi
+from defi_investor.backtest.stats import average_uniqueness, bet_stats, hhi, psr
 from defi_investor.labeler import LABELER_VERSION
 
 
@@ -167,6 +167,15 @@ def main() -> int:
     uniqueness = average_uniqueness(intervals, grid=grid) if intervals else 1.0
     effective_n = len(primary) * uniqueness
 
+    # Overlap-adjusted PSR: feed effective_n into the same Bailey & de Prado
+    # formula. This is the number the Phase 3 gate should read — the raw-n
+    # PSR ignores label-span concurrency and is optimistic when events overlap.
+    psr_effective = (
+        psr(sharpe=stats.sharpe, n=effective_n,
+            skew=stats.skew, kurt=stats.kurt, benchmark_sr=0.0)
+        if stats is not None else None
+    )
+
     lines += [
         "-" * 70,
         "Primary label statistics",
@@ -181,7 +190,8 @@ def main() -> int:
             f"  Sharpe:           {_fmt(stats.sharpe)}",
             f"  Skew (γ3):        {_fmt(stats.skew, 3)}",
             f"  Kurt (γ4):        {_fmt(stats.kurt, 3)}",
-            f"  PSR vs SR* = 0:   {stats.psr_vs_zero:.3f}   (gate: >= {PSR_GATE})",
+            f"  PSR (raw n):      {stats.psr_vs_zero:.3f}",
+            f"  PSR (eff n):      {psr_effective:.3f}   (gate: >= {PSR_GATE})",
         ]
     if hhi_pos is not None:
         lines.append(f"  HHI winners:      {hhi_pos:.3f}   (gate: <= {HHI_WINNER_GATE})")
@@ -249,13 +259,14 @@ def main() -> int:
         lines.append("  degenerate statistics — no gate call possible")
     else:
         c1 = stats.mean_r > 0
-        c2 = stats.psr_vs_zero >= PSR_GATE
+        # Gate reads the effective-n PSR (overlap-adjusted) per de Prado Ch 4.4.
+        c2 = psr_effective is not None and psr_effective >= PSR_GATE
         c3 = hhi_pos is not None and hhi_pos <= HHI_WINNER_GATE
         c4 = median_r is not None and stats.mean_r != 0 and (median_r / stats.mean_r) >= MEDIAN_MEAN_GATE
         c5 = sign_hits >= CONFOUND_SPLIT_HITS_REQUIRED
         lines += [
             f"  [{_pass_fail(c1)}]  Sign of mean R is positive",
-            f"  [{_pass_fail(c2)}]  PSR vs SR* = 0 >= {PSR_GATE}",
+            f"  [{_pass_fail(c2)}]  PSR (eff n) vs SR* = 0 >= {PSR_GATE}",
             f"  [{_pass_fail(c3)}]  HHI winners <= {HHI_WINNER_GATE}",
             f"  [{_pass_fail(c4)}]  Median/mean >= {MEDIAN_MEAN_GATE}",
             f"  [{_pass_fail(c5)}]  Sign consistency across >= {CONFOUND_SPLIT_HITS_REQUIRED}/3 splits",

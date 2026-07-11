@@ -15,10 +15,11 @@ gate's split-analysis (METHOD §2.4 criterion 5).
 ## What can't be backfilled now (documented for later)
 
 - `perp_oi_pct_change_prior_24h`: Bitget's V2 public API exposes CURRENT
-  open interest but no historical endpoint. For events already resolved
-  this value is unrecoverable. Forward-collect by adding an OI snapshot
-  step to the 15-min scraper cron and re-labeling from that data once
-  it accumulates.
+  open interest but no historical endpoint. Forward-collected by the
+  scraper's OI-snapshot step (see `oi_snapshots.py`, migration 005).
+  Backfillable for any event whose anchor falls at least 24h after the
+  OI cron's first successful snapshot for that coin — anything earlier
+  remains None (unrecoverable, tag stays null).
 - `total3_pct_change_7d`: CoinGecko free tier gates historical market-cap
   charts behind Pro. As a pragmatic proxy we store `btc_ret_7d_prior`
   computed from Bitget's own BTCUSDT candles. Same macro-direction signal
@@ -140,33 +141,123 @@ def perp_vol_change_prior_24h(coin_name: str, anchor_ts: datetime, *,
     return (v_recent - v_prior) / v_prior
 
 
+_OI_SNAPSHOT_MATCH_TOLERANCE = timedelta(minutes=30)
+_OI_LOOKUP_WINDOW = timedelta(hours=24) + _OI_SNAPSHOT_MATCH_TOLERANCE
+
+
+def perp_oi_pct_change_prior_24h(
+    coin_name: str,
+    anchor_ts: datetime,
+    *,
+    sb_client,
+) -> Optional[float]:
+    """Fractional change in perp OI over the 24h preceding the anchor.
+
+    Reads from `earn_oi_snapshots`, which is populated forward-only by the
+    scraper cron. Picks the snapshot closest to `anchor - 24h` and to
+    `anchor` itself, each within ±30 minutes (2x the scrape cadence).
+
+    Returns None when either endpoint has no qualifying snapshot, when the
+    coin has no perp market (market='none'), or when the earlier value is
+    zero. This is intentional — an unrecoverable tag stays null so the
+    Phase 3 confound split treats it as missing rather than as zero-change.
+    """
+    if sb_client is None:
+        return None
+    end_ts = anchor_ts + _OI_SNAPSHOT_MATCH_TOLERANCE
+    start_ts = anchor_ts - _OI_LOOKUP_WINDOW
+    try:
+        r = (
+            sb_client.table("earn_oi_snapshots")
+            .select("snapped_at,market,oi_base")
+            .eq("coin_name", coin_name.upper())
+            .gte("snapped_at", start_ts.isoformat())
+            .lte("snapped_at", end_ts.isoformat())
+            .order("snapped_at")
+            .execute()
+        )
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("oi snapshot query failed for %s: %s", coin_name, e)
+        return None
+
+    rows = r.data or []
+    perp_rows: list[tuple[datetime, float]] = []
+    for row in rows:
+        if row.get("market") != "perp":
+            continue
+        oi = row.get("oi_base")
+        if oi is None:
+            continue
+        try:
+            snap_ts = datetime.fromisoformat(str(row["snapped_at"]).replace("Z", "+00:00"))
+            oi_f = float(oi)
+        except (ValueError, TypeError, KeyError):
+            continue
+        perp_rows.append((snap_ts, oi_f))
+    if not perp_rows:
+        return None
+
+    target_before = anchor_ts - timedelta(hours=24)
+    before = _pick_closest(perp_rows, target_before, _OI_SNAPSHOT_MATCH_TOLERANCE)
+    at = _pick_closest(perp_rows, anchor_ts, _OI_SNAPSHOT_MATCH_TOLERANCE)
+    if before is None or at is None:
+        return None
+    if before == 0:
+        return None
+    return (at - before) / before
+
+
+def _pick_closest(
+    rows: list[tuple[datetime, float]],
+    target: datetime,
+    tolerance: timedelta,
+) -> Optional[float]:
+    best: Optional[tuple[timedelta, float]] = None
+    for ts, val in rows:
+        delta = ts - target if ts >= target else target - ts
+        if delta > tolerance:
+            continue
+        if best is None or delta < best[0]:
+            best = (delta, val)
+    return best[1] if best else None
+
+
 def compute_confounds(
     coin_name: str,
     anchor_iso: str,
     *,
     client: Optional[httpx.Client] = None,
+    sb_client=None,
 ) -> dict:
     """One-shot: return a dict of all backfill-computable confound tags.
 
     Missing values remain None so downstream storage stays schema-stable.
+    `sb_client` is required only for `perp_oi_pct_change_prior_24h`
+    which queries the forward-collected snapshot table; omit it and that
+    field stays None.
     """
+    empty = {
+        "bitget_listing_age_days": None,
+        "within_7d_of_tge": None,
+        "btc_ret_7d_prior": None,
+        "perp_vol_change_prior_24h": None,
+        "perp_oi_pct_change_prior_24h": None,
+    }
     try:
         anchor = datetime.fromisoformat(anchor_iso.replace("Z", "+00:00"))
     except (ValueError, TypeError):
-        return {
-            "bitget_listing_age_days": None,
-            "within_7d_of_tge": None,
-            "btc_ret_7d_prior": None,
-            "perp_vol_change_prior_24h": None,
-        }
+        return empty
 
     age = listing_age_days(coin_name, anchor, client=client)
     within_7 = (age is not None and age < 7)
     btc7 = btc_return(anchor - timedelta(days=7), anchor, client=client)
     vol24 = perp_vol_change_prior_24h(coin_name, anchor, client=client)
+    oi24 = perp_oi_pct_change_prior_24h(coin_name, anchor, sb_client=sb_client) \
+        if sb_client is not None else None
     return {
         "bitget_listing_age_days": age,
         "within_7d_of_tge": within_7 if age is not None else None,
         "btc_ret_7d_prior": btc7,
         "perp_vol_change_prior_24h": vol24,
+        "perp_oi_pct_change_prior_24h": oi24,
     }

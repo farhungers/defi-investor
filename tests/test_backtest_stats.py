@@ -79,6 +79,26 @@ def test_psr_degenerate_variance_returns_half():
     assert p == 0.5
 
 
+def test_psr_accepts_float_n_for_effective_sample_size():
+    """Uniqueness-weighted effective_n (float) must be a valid n input."""
+    p = psr(sharpe=0.5, n=50.5, skew=0.0, kurt=3.0, benchmark_sr=0.0)
+    assert 0.0 <= p <= 1.0
+
+
+def test_psr_effective_n_lower_than_raw_n_reduces_confidence():
+    """Reducing effective sample size (as uniqueness deflation does) must
+    move PSR toward 0.5 (indifference), never away."""
+    raw = psr(sharpe=0.3, n=60, skew=0.0, kurt=3, benchmark_sr=0.0)
+    eff = psr(sharpe=0.3, n=30.0, skew=0.0, kurt=3, benchmark_sr=0.0)
+    # Positive edge → both above 0.5, effective (smaller n) closer to 0.5
+    assert raw > eff > 0.5
+
+
+def test_psr_below_two_effective_returns_indifference():
+    """Effective n < 2 (e.g. after severe uniqueness deflation) is honest 0.5."""
+    assert psr(sharpe=0.5, n=1.5, skew=0.0, kurt=3.0) == 0.5
+
+
 # --- hhi -------------------------------------------------------------------
 
 

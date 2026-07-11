@@ -29,6 +29,7 @@ import httpx
 from .db import Writer, build_writer
 from .models import EarnEvent, SCRAPER_VERSION
 from .notifier import Notifier, build_notifier, dispatch_scrape_notifications
+from .oi_snapshots import snapshot_universe
 from .parsers.next_data import parse_earning_page
 
 
@@ -53,6 +54,9 @@ class ScrapeResult:
     events_upserted_remote: int = 0
     transitions_logged_remote: int = 0
     alerts_sent: dict[str, int] = None  # {"new": _, "sold_out": _, "reopened": _}
+    oi_snapshots_taken: int = 0
+    oi_snapshots_with_perp: int = 0
+    oi_snapshots_written_remote: int = 0
 
 
 def _now_utc() -> datetime:
@@ -285,6 +289,26 @@ def run_scrape(
     else:
         LOG.info("cold start (no prior state) — alerts suppressed for this scrape")
 
+    # OI snapshot: forward-collect current perp OI for every distinct coin in
+    # the merged catalog. Enables the METHOD §1.3 confound tag
+    # `perp_oi_pct_change_prior_24h` once ~24h of history accumulates.
+    # Non-fatal: a Bitget rate limit or transient failure must not corrupt
+    # the scrape itself.
+    n_snaps = 0
+    n_with_perp = 0
+    n_snaps_written = 0
+    try:
+        distinct_coins = sorted({ev.coin_name for ev in merged.values() if ev.coin_name})
+        snapshots = snapshot_universe(distinct_coins, snapped_at=scraped_at)
+        n_snaps = len(snapshots)
+        n_with_perp = sum(1 for s in snapshots if s.oi_base is not None)
+        if snapshots:
+            n_snaps_written = writer.insert_oi_snapshots([s.to_row() for s in snapshots])
+        LOG.info("oi snapshot: %d coins, %d with perp, %d persisted",
+                 n_snaps, n_with_perp, n_snaps_written)
+    except Exception as e:
+        LOG.warning("oi snapshot step failed (non-fatal): %s", e)
+
     return ScrapeResult(
         scraped_at=scraped_at,
         raw_capture_path=raw_path,
@@ -296,6 +320,9 @@ def run_scrape(
         events_upserted_remote=n_upserted,
         transitions_logged_remote=n_logged,
         alerts_sent=alerts_sent,
+        oi_snapshots_taken=n_snaps,
+        oi_snapshots_with_perp=n_with_perp,
+        oi_snapshots_written_remote=n_snaps_written,
     )
 
 
@@ -322,6 +349,9 @@ def main() -> None:
         "events_upserted_remote": result.events_upserted_remote,
         "transitions_logged_remote": result.transitions_logged_remote,
         "alerts_sent": result.alerts_sent,
+        "oi_snapshots_taken": result.oi_snapshots_taken,
+        "oi_snapshots_with_perp": result.oi_snapshots_with_perp,
+        "oi_snapshots_written_remote": result.oi_snapshots_written_remote,
         "raw_capture_sha256_head": result.raw_capture_sha256[:12],
         "raw_capture_path": str(result.raw_capture_path),
     }, indent=2))

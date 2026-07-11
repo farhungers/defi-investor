@@ -138,12 +138,13 @@ def test_vol_change_none_when_no_candles(monkeypatch):
 
 
 def test_compute_confounds_returns_stable_keys(monkeypatch):
-    """All four expected keys are always present."""
+    """All expected keys are always present."""
     _patch_fetch(monkeypatch, [(pd.DataFrame(), "none")])
     d = cf_mod.compute_confounds("X", "2026-05-15T00:00:00+00:00")
     assert set(d.keys()) == {
         "bitget_listing_age_days", "within_7d_of_tge",
         "btc_ret_7d_prior", "perp_vol_change_prior_24h",
+        "perp_oi_pct_change_prior_24h",
     }
 
 
@@ -151,3 +152,123 @@ def test_compute_confounds_bad_anchor_returns_all_none(monkeypatch):
     d = cf_mod.compute_confounds("X", "not-a-date")
     for v in d.values():
         assert v is None
+
+
+# --- perp_oi_pct_change_prior_24h -----------------------------------------
+
+
+class _StubSbTable:
+    """Minimal Supabase-like builder that captures the query and returns fixed rows."""
+    def __init__(self, rows):
+        self._rows = rows
+        self.filters: dict = {}
+
+    def select(self, *_a, **_k): return self
+    def eq(self, k, v): self.filters[f"eq:{k}"] = v; return self
+    def gte(self, k, v): self.filters[f"gte:{k}"] = v; return self
+    def lte(self, k, v): self.filters[f"lte:{k}"] = v; return self
+    def order(self, *_a, **_k): return self
+
+    def execute(self):
+        class R: pass
+        r = R()
+        r.data = self._rows
+        return r
+
+
+class _StubSbClient:
+    def __init__(self, rows):
+        self._rows = rows
+        self.last_table = None
+
+    def table(self, name):
+        self.last_table = name
+        return _StubSbTable(self._rows)
+
+
+def test_perp_oi_pct_change_prior_24h_none_without_client():
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    assert cf_mod.perp_oi_pct_change_prior_24h("LAB", anchor, sb_client=None) is None
+
+
+def test_perp_oi_pct_change_prior_24h_returns_ratio_from_snapshots():
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    rows = [
+        {"snapped_at": (anchor - timedelta(hours=24)).isoformat(),
+         "market": "perp", "oi_base": 1000.0},
+        {"snapped_at": (anchor - timedelta(hours=12)).isoformat(),
+         "market": "perp", "oi_base": 1200.0},
+        {"snapped_at": anchor.isoformat(),
+         "market": "perp", "oi_base": 1500.0},
+    ]
+    sb = _StubSbClient(rows)
+    v = cf_mod.perp_oi_pct_change_prior_24h("LAB", anchor, sb_client=sb)
+    assert v == pytest.approx(0.5)
+    assert sb.last_table == "earn_oi_snapshots"
+
+
+def test_perp_oi_pct_change_prior_24h_none_when_no_perp_rows():
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    rows = [
+        {"snapped_at": (anchor - timedelta(hours=24)).isoformat(),
+         "market": "none", "oi_base": None},
+        {"snapped_at": anchor.isoformat(),
+         "market": "none", "oi_base": None},
+    ]
+    sb = _StubSbClient(rows)
+    assert cf_mod.perp_oi_pct_change_prior_24h("LAB", anchor, sb_client=sb) is None
+
+
+def test_perp_oi_pct_change_prior_24h_none_when_endpoint_missing():
+    """Anchor snapshot present, prior-24h snapshot absent → None."""
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    rows = [
+        {"snapped_at": anchor.isoformat(),
+         "market": "perp", "oi_base": 1500.0},
+    ]
+    sb = _StubSbClient(rows)
+    assert cf_mod.perp_oi_pct_change_prior_24h("LAB", anchor, sb_client=sb) is None
+
+
+def test_perp_oi_pct_change_prior_24h_none_when_before_is_zero():
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    rows = [
+        {"snapped_at": (anchor - timedelta(hours=24)).isoformat(),
+         "market": "perp", "oi_base": 0.0},
+        {"snapped_at": anchor.isoformat(),
+         "market": "perp", "oi_base": 500.0},
+    ]
+    sb = _StubSbClient(rows)
+    assert cf_mod.perp_oi_pct_change_prior_24h("LAB", anchor, sb_client=sb) is None
+
+
+def test_perp_oi_pct_change_prior_24h_survives_query_exception():
+    class BrokenSb:
+        def table(self, _n):
+            class T:
+                def select(self, *a, **k): return self
+                def eq(self, *a, **k): return self
+                def gte(self, *a, **k): return self
+                def lte(self, *a, **k): return self
+                def order(self, *a, **k): return self
+                def execute(self): raise RuntimeError("boom")
+            return T()
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    assert cf_mod.perp_oi_pct_change_prior_24h(
+        "LAB", anchor, sb_client=BrokenSb(),
+    ) is None
+
+
+def test_compute_confounds_passes_sb_client_to_oi(monkeypatch):
+    """When sb_client provided, the OI key is populated (or None on empty rows)."""
+    _patch_fetch(monkeypatch, [
+        (_mk_daily(["2026-06-01"]), "perp"),
+        (_mk_daily(["2026-05-01", "2026-05-02"]), "perp"),
+        (_mk_daily(["2026-06-30", "2026-07-01"]), "perp"),
+    ])
+    sb = _StubSbClient([])  # no snapshots yet → OI stays None gracefully
+    d = cf_mod.compute_confounds(
+        "LAB", "2026-07-10T00:00:00+00:00", sb_client=sb,
+    )
+    assert d["perp_oi_pct_change_prior_24h"] is None
+    assert "perp_oi_pct_change_prior_24h" in d
