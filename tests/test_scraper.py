@@ -134,15 +134,19 @@ def test_write_catalog_is_sorted(tmp_path: Path):
 
 
 def _stub_snapshot_universe(monkeypatch):
-    """Replace both OI and vest snapshot universes with no-ops. Keeps
-    tests offline regardless of the hourly-alignment branch."""
+    """Replace OI + vest + listings snapshots with no-ops. Keeps tests
+    offline regardless of which cadence gate happens to fire."""
     from defi_investor import scraper as scraper_mod
 
     def fake(coin_names, snapped_at=None, client=None, **kw):
         return []
 
+    def fake_listings(observed_at=None, client=None, **kw):
+        return ([], {"n_fetched": 0, "error": None})
+
     monkeypatch.setattr(scraper_mod, "snapshot_universe", fake)
     monkeypatch.setattr(scraper_mod, "vest_snapshot_universe", fake)
+    monkeypatch.setattr(scraper_mod, "bitget_snapshot_listings", fake_listings)
 
 
 def _freeze_now(monkeypatch, minute: int):
@@ -253,10 +257,13 @@ def test_scraper_persists_oi_snapshots_from_universe(tmp_path: Path, monkeypatch
         ]
 
     monkeypatch.setattr(scraper_mod, "snapshot_universe", fake_snapshots)
-    # Vest step must also stay offline even if this minute happens to be
-    # hourly-aligned. The vest wiring has its own dedicated tests.
+    # Vest + listings steps must also stay offline even if this minute
+    # happens to hit their cadence gate. They have their own dedicated tests.
     monkeypatch.setattr(scraper_mod, "vest_snapshot_universe",
                         lambda *a, **kw: [])
+    monkeypatch.setattr(scraper_mod, "bitget_snapshot_listings",
+                        lambda observed_at=None, client=None, **kw: (
+                            [], {"n_fetched": 0, "error": None}))
 
     class W:
         def __init__(self):
@@ -294,9 +301,12 @@ def test_scraper_oi_failure_is_non_fatal(tmp_path: Path, monkeypatch):
         raise RuntimeError("bitget rate limit")
 
     monkeypatch.setattr(scraper_mod, "snapshot_universe", boom)
-    # Vest step must stay silent even if it happens to fire this minute.
+    # Vest + listings must stay silent even if their cadence gates fire.
     monkeypatch.setattr(scraper_mod, "vest_snapshot_universe",
                         lambda *a, **kw: [])
+    monkeypatch.setattr(scraper_mod, "bitget_snapshot_listings",
+                        lambda observed_at=None, client=None, **kw: (
+                            [], {"n_fetched": 0, "error": None}))
 
     result = scraper_mod.run_scrape(project_root=tmp_path)
     # Scrape core stayed correct; OI counters zeroed.
@@ -315,6 +325,9 @@ def test_scraper_vest_step_runs_only_on_hourly_alignment(tmp_path: Path, monkeyp
                         lambda client=None, timeout=30.0: canned_html)
     monkeypatch.setattr(scraper_mod, "snapshot_universe",
                         lambda *a, **kw: [])
+    monkeypatch.setattr(scraper_mod, "bitget_snapshot_listings",
+                        lambda observed_at=None, client=None, **kw: (
+                            [], {"n_fetched": 0, "error": None}))
 
     calls = {"n": 0}
 
@@ -354,6 +367,9 @@ def test_scraper_vest_failure_is_non_fatal(tmp_path: Path, monkeypatch):
                         lambda client=None, timeout=30.0: canned_html)
     monkeypatch.setattr(scraper_mod, "snapshot_universe",
                         lambda *a, **kw: [])
+    monkeypatch.setattr(scraper_mod, "bitget_snapshot_listings",
+                        lambda observed_at=None, client=None, **kw: (
+                            [], {"n_fetched": 0, "error": None}))
 
     def boom(*a, **kw):
         raise RuntimeError("tokenomist down")
@@ -366,3 +382,79 @@ def test_scraper_vest_failure_is_non_fatal(tmp_path: Path, monkeypatch):
     assert result.vest_snapshot_ran is True
     assert result.vest_snapshots_taken == 0
     assert result.vest_snapshots_written_remote == 0
+
+
+def test_scraper_listings_step_gates_on_daily_alignment(tmp_path: Path, monkeypatch):
+    """Listings step must fire only when hour==3 AND minute<15."""
+    from defi_investor import scraper as scraper_mod
+    from defi_investor.bitget_listings import BitgetListing
+
+    canned_html = FIXTURE.read_text(encoding="utf-8")
+    monkeypatch.setattr(scraper_mod, "fetch_earning_html",
+                        lambda client=None, timeout=30.0: canned_html)
+    monkeypatch.setattr(scraper_mod, "snapshot_universe",
+                        lambda *a, **kw: [])
+    monkeypatch.setattr(scraper_mod, "vest_snapshot_universe",
+                        lambda *a, **kw: [])
+
+    calls = {"n": 0}
+
+    def fake_listings(observed_at=None, client=None, **kw):
+        calls["n"] += 1
+        return ([BitgetListing(
+            symbol="GOATUSDT", coin_name="GOAT", quote_coin="USDT",
+            listing_ts="2024-10-19T05:00:00+00:00",
+            status="online", off_ts=None,
+        )], {"n_fetched": 1, "error": None})
+
+    monkeypatch.setattr(scraper_mod, "bitget_snapshot_listings", fake_listings)
+
+    # Hour 3 minute 30 → skip (past the 15-min gate)
+    from datetime import datetime, timezone as _tz
+    frozen = datetime(2026, 7, 11, 3, 30, tzinfo=_tz.utc)
+    monkeypatch.setattr(scraper_mod, "_now_utc", lambda: frozen)
+    r1 = scraper_mod.run_scrape(project_root=tmp_path)
+    assert r1.listings_snapshot_ran is False
+    assert calls["n"] == 0
+
+    # Hour 4 minute 0 → skip (wrong hour)
+    frozen4 = datetime(2026, 7, 11, 4, 0, tzinfo=_tz.utc)
+    monkeypatch.setattr(scraper_mod, "_now_utc", lambda: frozen4)
+    r2 = scraper_mod.run_scrape(project_root=tmp_path)
+    assert r2.listings_snapshot_ran is False
+    assert calls["n"] == 0
+
+    # Hour 3 minute 5 → fire
+    frozen35 = datetime(2026, 7, 11, 3, 5, tzinfo=_tz.utc)
+    monkeypatch.setattr(scraper_mod, "_now_utc", lambda: frozen35)
+    r3 = scraper_mod.run_scrape(project_root=tmp_path)
+    assert r3.listings_snapshot_ran is True
+    assert calls["n"] == 1
+    assert r3.listings_fetched == 1
+
+
+def test_scraper_listings_failure_is_non_fatal(tmp_path: Path, monkeypatch):
+    """Listings step raising must not abort the scrape."""
+    from defi_investor import scraper as scraper_mod
+    from datetime import datetime, timezone as _tz
+
+    canned_html = FIXTURE.read_text(encoding="utf-8")
+    monkeypatch.setattr(scraper_mod, "fetch_earning_html",
+                        lambda client=None, timeout=30.0: canned_html)
+    monkeypatch.setattr(scraper_mod, "snapshot_universe",
+                        lambda *a, **kw: [])
+    monkeypatch.setattr(scraper_mod, "vest_snapshot_universe",
+                        lambda *a, **kw: [])
+
+    def boom(*a, **kw):
+        raise RuntimeError("bitget symbols down")
+
+    monkeypatch.setattr(scraper_mod, "bitget_snapshot_listings", boom)
+    frozen = datetime(2026, 7, 11, 3, 5, tzinfo=_tz.utc)
+    monkeypatch.setattr(scraper_mod, "_now_utc", lambda: frozen)
+
+    result = scraper_mod.run_scrape(project_root=tmp_path)
+    assert result.events_seen > 0
+    assert result.listings_snapshot_ran is True
+    assert result.listings_fetched == 0
+    assert result.listings_written_remote == 0

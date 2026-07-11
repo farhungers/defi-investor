@@ -294,6 +294,49 @@ def test_insert_next_unlocks_empty_is_noop():
     assert "earn_next_unlocks" not in client.tables
 
 
+# ---------- upsert_bitget_listings ---------------------------------------
+
+def test_noop_upsert_bitget_listings_returns_zero():
+    assert NoOpWriter().upsert_bitget_listings(
+        [{"symbol": "GOATUSDT", "coin_name": "GOAT", "quote_coin": "USDT",
+          "listing_ts": "2024-10-19T05:00:00+00:00",
+          "status": "online", "off_ts": None,
+          "first_seen_at": "2026-07-11T00:00:00+00:00",
+          "last_seen_at": "2026-07-11T00:00:00+00:00",
+          "snapshot_source": "spot_symbols"}]
+    ) == 0
+
+
+def test_noop_fetch_bitget_listings_returns_empty():
+    assert NoOpWriter().fetch_bitget_listings() == {}
+
+
+def test_upsert_bitget_listings_uses_symbol_on_conflict():
+    client = FakeClient()
+    w = SupabaseWriter(client=client)
+    rows = [
+        {"symbol": "GOATUSDT", "coin_name": "GOAT", "quote_coin": "USDT",
+         "listing_ts": "2024-10-19T05:00:00+00:00",
+         "status": "online", "off_ts": None,
+         "first_seen_at": "2026-07-11T00:00:00+00:00",
+         "last_seen_at": "2026-07-11T00:00:00+00:00",
+         "snapshot_source": "spot_symbols"},
+    ]
+    n = w.upsert_bitget_listings(rows)
+    assert n == 1
+    calls = client.tables["bitget_listings"].calls
+    assert len(calls) == 1
+    assert calls[0]["op"] == "upsert"
+    assert calls[0]["on_conflict"] == "symbol"
+
+
+def test_upsert_bitget_listings_empty_is_noop():
+    client = FakeClient()
+    w = SupabaseWriter(client=client)
+    assert w.upsert_bitget_listings([]) == 0
+    assert "bitget_listings" not in client.tables
+
+
 # ---------- fetch_events pagination -----------------------------------------
 
 class PaginatingFakeQuery:

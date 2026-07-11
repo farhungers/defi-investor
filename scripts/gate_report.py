@@ -200,6 +200,50 @@ def main() -> int:
     if median_r is not None and mean_to_median is not None:
         lines.append(f"  Median R:         {_fmt(median_r)}   (median/mean {mean_to_median:.2f})")
 
+    # Control cohort (METHOD §1.4): count Bitget spot listings inside the
+    # primary time window that did NOT get an Earn program on the same
+    # coin_name. Descriptive only in Phase 2 — the actual DiD comparison
+    # (control R vs Earn R over post-listing 7d) is Phase 3 research work
+    # and lives in a downstream notebook, not here.
+    try:
+        anchor_ts_list = [pd.to_datetime(r["anchor_ts"]) for r in primary
+                          if r.get("anchor_ts")]
+        if anchor_ts_list:
+            t_min = min(anchor_ts_list).isoformat()
+            t_max = max(anchor_ts_list).isoformat()
+            listings_r = (
+                sb.table("bitget_listings")
+                .select("symbol,coin_name,listing_ts,status")
+                .gte("listing_ts", t_min)
+                .lte("listing_ts", t_max)
+                .execute()
+            )
+            listings_rows = listings_r.data or []
+            earn_coins = {row["coin_name"] for row in raw if row.get("features", {})}
+            # Fall back to a direct earn_events pull for coins seen in labels;
+            # the label rows do not carry coin_name at the top level.
+            evs = (
+                sb.table("earn_events")
+                .select("coin_name")
+                .execute()
+            )
+            earn_coin_names = {r["coin_name"] for r in (evs.data or [])
+                               if r.get("coin_name")}
+            control_only = [l for l in listings_rows
+                            if l.get("coin_name")
+                            and l["coin_name"] not in earn_coin_names]
+            lines += [
+                "-" * 70,
+                "Control cohort (METHOD §1.4 — descriptive)",
+                f"  Primary time window:            [{t_min[:10]} … {t_max[:10]}]",
+                f"  Bitget listings in window:      {len(listings_rows)}",
+                f"  With Earn program (excluded):   {len(listings_rows) - len(control_only)}",
+                f"  Control-arm cohort size:        {len(control_only)}",
+                "  DiD analysis (control R vs Earn R): deferred to Phase 3",
+            ]
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("control-cohort section failed: %s", e)
+
     # Confound splits (age, macro, positioning)
     def in_age_bucket(r):
         age = r.get("bitget_listing_age_days")

@@ -33,6 +33,8 @@ class Writer(Protocol):
     def fetch_events(self) -> dict[str, EarnEvent]: ...
     def insert_oi_snapshots(self, rows: Sequence[dict]) -> int: ...
     def insert_next_unlocks(self, rows: Sequence[dict]) -> int: ...
+    def upsert_bitget_listings(self, rows: Sequence[dict]) -> int: ...
+    def fetch_bitget_listings(self) -> dict[str, dict]: ...
 
 
 class NoOpWriter:
@@ -63,6 +65,13 @@ class NoOpWriter:
     def insert_next_unlocks(self, rows: Sequence[dict]) -> int:
         LOG.debug("NoOpWriter.insert_next_unlocks: %d rows discarded", len(rows))
         return 0
+
+    def upsert_bitget_listings(self, rows: Sequence[dict]) -> int:
+        LOG.debug("NoOpWriter.upsert_bitget_listings: %d rows discarded", len(rows))
+        return 0
+
+    def fetch_bitget_listings(self) -> dict[str, dict]:
+        return {}
 
 
 class SupabaseWriter:
@@ -163,6 +172,60 @@ class SupabaseWriter:
                 break
             start += self.FETCH_PAGE_SIZE
         LOG.info("SupabaseWriter.fetch_events: hydrated %d rows", len(catalog))
+        return catalog
+
+    LISTINGS_UPSERT_BATCH_SIZE = 500
+
+    def upsert_bitget_listings(self, rows: Sequence[dict]) -> int:
+        """Upsert Bitget spot listings on the `symbol` PK.
+
+        Preserves `first_seen_at` from prior rows by using Postgres
+        upsert semantics — the Supabase client sends every column;
+        first_seen_at will overwrite on repeat unless we split the
+        payload. Keep it simple: the caller is responsible for passing
+        the correct first_seen_at (either "the earliest we've seen"
+        pulled from a prior fetch, or the current wall clock on a fresh
+        row). See scraper wiring for the merge logic.
+        """
+        if not rows:
+            return 0
+        n = 0
+        for start in range(0, len(rows), self.LISTINGS_UPSERT_BATCH_SIZE):
+            batch = list(rows[start:start + self.LISTINGS_UPSERT_BATCH_SIZE])
+            (
+                self._client
+                .table("bitget_listings")
+                .upsert(batch, on_conflict="symbol")
+                .execute()
+            )
+            n += len(batch)
+        LOG.info("SupabaseWriter.upsert_bitget_listings: %d rows", n)
+        return n
+
+    def fetch_bitget_listings(self) -> dict[str, dict]:
+        """Fetch existing listings keyed by symbol.
+
+        Used by the scraper to preserve `first_seen_at` on repeat upserts.
+        Paginated to scale past the 1000-row Supabase default.
+        """
+        catalog: dict[str, dict] = {}
+        start = 0
+        page = 1000
+        while True:
+            end = start + page - 1
+            r = (
+                self._client
+                .table("bitget_listings")
+                .select("symbol,first_seen_at")
+                .range(start, end)
+                .execute()
+            )
+            rows = r.data or []
+            for row in rows:
+                catalog[row["symbol"]] = row
+            if len(rows) < page:
+                break
+            start += page
         return catalog
 
     NEXT_UNLOCKS_UPSERT_BATCH_SIZE = 500

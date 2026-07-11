@@ -18,6 +18,7 @@ Component status:
 - Labeler (Phase 2): LIVE, nightly. `earn_event_labels` at 104 rows across 4 labeler versions. `LABELER_VERSION = "0.2.1"` current.
 - OI snapshots (Phase 2 session 2): CODE READY, migration 005 applied. Populates `earn_oi_snapshots` for the `perp_oi_pct_change_prior_24h` confound from the next `*/15` cron on.
 - Vest unlocks (Phase 2 session 2): CODE READY, migration 006 applied. Populates `earn_next_unlocks` from tokenomist.ai SSR on the hourly-aligned scrape. 5-10% coverage expected per METHOD §1.2 acceptance.
+- Control-arm (Phase 2 session 2, METHOD §1.4): CODE READY, migration 007 applied. Populates `bitget_listings` daily at 03:00 UTC from `/spot/public/symbols`. DiD analysis deferred to Phase 3 research.
 - Backtest primitives: BUILT FROM SCRATCH from de Prado Ch 7 (purged CV) + Ch 14 (PSR / HHI / uniqueness). No sibling reads.
 - Gate report: `scripts/gate_report.py` runnable today, will print meaningful primary universe once first 7-day windows close (~2026-07-16 onward).
 

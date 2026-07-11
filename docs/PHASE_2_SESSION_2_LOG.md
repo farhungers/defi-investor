@@ -76,10 +76,27 @@ Design-level caveat carried forward from research: the SSR only exposes the **si
 
 None. Migration applied inline.
 
+## Addendum — Control-arm scraper (METHOD §1.4)
+
+Second scope-expansion in the session. Ships the data collection for the control cohort; the DiD analysis remains Phase 3 research.
+
+- `db/migrations/007_bitget_listings.sql` — `bitget_listings` table PK on `symbol` with per-coin and per-listing_ts indexes plus a partial online index. **Applied to Supabase** (9 columns, 4 indexes verified).
+- `src/defi_investor/bitget_listings.py` — fetches Bitget's authoritative `/api/v2/spot/public/symbols` endpoint (~1,175 rows in one call). Uses `openTime` as the listing timestamp. Better than parsing announcement titles — no regex against human copy, no pagination.
+- `src/defi_investor/scraper.py` — daily cadence gate (`now.hour == 3 AND now.minute < 15`). Preserves `first_seen_at` via `writer.fetch_bitget_listings()` on repeat runs. Non-fatal on Bitget failure.
+- `src/defi_investor/db.py` — `upsert_bitget_listings` + `fetch_bitget_listings` on Writer protocol + NoOp + Supabase (composite-friendly on `symbol` PK).
+- `scripts/gate_report.py` — new descriptive "Control cohort (METHOD §1.4)" section: counts Bitget listings inside the primary time window, subtracts those with matching earn_events entries, reports the control-arm cohort size. DiD comparison of control R vs Earn R is intentionally deferred to Phase 3.
+- Tests: +19 across `test_bitget_listings.py`, `test_db.py`, `test_scraper.py`. **204/204 green** (was 186).
+
+### Deliberately deferred
+
+- **DiD analysis** of control-arm returns using `candles.py` (7d post-listing R for each non-Earn listing vs Earn cohort primary R). This is a Phase 3 research task, not infrastructure. Per METHOD §5's "features before backtest" rule the code stays quiet until n ≥ 30 primary events exist.
+- **Perp listings**. `/mix/market/contracts?productType=USDT-FUTURES` gives USDT-M perp openings but Phase 2 primary universe is spot-Earn-anchored. Perp control-arm is an easy add-on later.
+
 ## Remaining backlog
 
 - **Paid TOTAL3 data source** (session-1 "impatient" item 3). Blocked on operator approval to spend money on CoinGecko Pro or CoinMarketCap. Until then `btc_ret_7d_prior` continues as the macro proxy.
 - **Paid vest data source** (Business tier CryptoRank $149/mo or DefiLlama Pro). Would replace the SSR scraper if the primary universe ever fails on unlock-adjacent split.
+- **PoolX Playwright scraper**. Session 1 deferred as "not urgent for H1 primary universe." Still deferred.
 
 Everything else is calendar-bound.
 

@@ -29,6 +29,7 @@ import httpx
 from .db import Writer, build_writer
 from .models import EarnEvent, SCRAPER_VERSION
 from .notifier import Notifier, build_notifier, dispatch_scrape_notifications
+from .bitget_listings import snapshot_listings as bitget_snapshot_listings
 from .oi_snapshots import snapshot_universe
 from .parsers.next_data import parse_earning_page
 from .vest_unlocks import snapshot_universe as vest_snapshot_universe
@@ -62,6 +63,9 @@ class ScrapeResult:
     vest_snapshots_tracked: int = 0
     vest_snapshots_written_remote: int = 0
     vest_snapshot_ran: bool = False
+    listings_snapshot_ran: bool = False
+    listings_fetched: int = 0
+    listings_written_remote: int = 0
 
 
 def _now_utc() -> datetime:
@@ -334,6 +338,33 @@ def run_scrape(
         except Exception as e:
             LOG.warning("vest snapshot step failed (non-fatal): %s", e)
 
+    # Bitget listings control-arm snapshot: once per day, at hour 03 UTC on
+    # the first cron of the hour. Daily cadence is enough — `openTime` is
+    # stable and Bitget adds a few pairs per week at most. Non-fatal.
+    listings_ran = False
+    n_listings = 0
+    n_listings_written = 0
+    if now.hour == 3 and now.minute < 15:
+        listings_ran = True
+        try:
+            listings, stats = bitget_snapshot_listings(observed_at=scraped_at)
+            n_listings = len(listings)
+            if listings:
+                prior = writer.fetch_bitget_listings()
+                rows = [
+                    l.to_row(
+                        first_seen_at=(prior.get(l.symbol) or {}).get(
+                            "first_seen_at", scraped_at),
+                        last_seen_at=scraped_at,
+                    )
+                    for l in listings
+                ]
+                n_listings_written = writer.upsert_bitget_listings(rows)
+            LOG.info("bitget listings snapshot: fetched=%d persisted=%d",
+                     n_listings, n_listings_written)
+        except Exception as e:
+            LOG.warning("bitget listings snapshot failed (non-fatal): %s", e)
+
     return ScrapeResult(
         scraped_at=scraped_at,
         raw_capture_path=raw_path,
@@ -352,6 +383,9 @@ def run_scrape(
         vest_snapshots_tracked=n_vest_tracked,
         vest_snapshots_written_remote=n_vest_written,
         vest_snapshot_ran=vest_ran,
+        listings_snapshot_ran=listings_ran,
+        listings_fetched=n_listings,
+        listings_written_remote=n_listings_written,
     )
 
 
@@ -385,6 +419,9 @@ def main() -> None:
         "vest_snapshots_taken": result.vest_snapshots_taken,
         "vest_snapshots_tracked": result.vest_snapshots_tracked,
         "vest_snapshots_written_remote": result.vest_snapshots_written_remote,
+        "listings_snapshot_ran": result.listings_snapshot_ran,
+        "listings_fetched": result.listings_fetched,
+        "listings_written_remote": result.listings_written_remote,
         "raw_capture_sha256_head": result.raw_capture_sha256[:12],
         "raw_capture_path": str(result.raw_capture_path),
     }, indent=2))
