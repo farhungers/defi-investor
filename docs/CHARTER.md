@@ -1,8 +1,8 @@
 # CHARTER — defi-investor investigation
 
 **Author:** Vault (seeded 2026-07-09)
-**Current phase:** 0 (Investigation, artifacts only)
-**Next phase gate:** Phase 1 (scraper build). No handoff to Phase 1 until this charter, `DATA_MODEL.md`, `SCRAPER.md`, and `METHOD.md` are all read.
+**Current phase:** 2 (Infrastructure complete, pilot burning for labels)
+**Next phase gate:** Phase 3 (Statistical claim). Gate call at n ≥ 30 primary universe. All METHOD §1 confounds instrumented (age, TGE, macro proxy, positioning, OI, vest, regime). Control-arm data collecting; DiD analysis deferred to Phase 3 research work.
 
 ## 1. Hypothesis
 
