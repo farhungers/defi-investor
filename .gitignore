@@ -9,6 +9,9 @@ credentials.json
 data/raw/*
 !data/raw/.gitkeep
 
+# Reference books (copyrighted PDFs, local research only, never push)
+resaerchBOOKS/
+
 # Derived catalog is optional to commit; keep local by default
 data/events/*.jsonl
 !data/events/.gitkeep
