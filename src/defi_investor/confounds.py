@@ -32,10 +32,12 @@ in `candles_provenance` on the LabelRow.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
+import numpy as np
 
 from .candles import fetch_candles
 
@@ -105,6 +107,45 @@ def btc_return(start_ts: datetime, end_ts: datetime, *,
     if p0 == 0:
         return None
     return (p1 - p0) / p0
+
+
+# Annualization for 4H realized vol: 6 bars/day × 365 days = 2190 bars/year.
+_BARS_PER_YEAR_4H = 6 * 365
+
+
+def btc_30d_realized_vol(
+    anchor_ts: datetime,
+    *,
+    client: Optional[httpx.Client] = None,
+) -> Optional[float]:
+    """Annualized realized volatility of BTCUSDT close-to-close log returns
+    over the 30 days preceding `anchor_ts`. METHOD §1.6 regime confound.
+
+    Uses 4H bars → 180 observations per 30d window. Annualized by
+    √(bars/year) so downstream buckets read comparably against implied-vol
+    conventions (e.g. 0.60 ≈ 60% annualized).
+
+    Returns None when candles are missing or the sample is degenerate
+    (< 30 observations, or zero-variance closes).
+    """
+    end_ms = int(anchor_ts.timestamp() * 1000)
+    start_ms = int((anchor_ts - timedelta(days=30)).timestamp() * 1000)
+    df, _ = fetch_candles(
+        symbol="BTCUSDT", start_ms=start_ms, end_ms=end_ms,
+        granularity="4H", client=client,
+    )
+    if df is None or df.empty or len(df) < 30:
+        return None
+    closes = df["close"].to_numpy(dtype="float64")
+    if not np.all(np.isfinite(closes)) or np.any(closes <= 0):
+        return None
+    log_r = np.diff(np.log(closes))
+    if log_r.size < 2:
+        return None
+    sample_stdev = float(np.std(log_r, ddof=1))
+    if sample_stdev == 0.0:
+        return None
+    return sample_stdev * math.sqrt(_BARS_PER_YEAR_4H)
 
 
 def perp_vol_change_prior_24h(coin_name: str, anchor_ts: datetime, *,
@@ -303,6 +344,8 @@ def compute_confounds(
         "perp_vol_change_prior_24h": None,
         "perp_oi_pct_change_prior_24h": None,
         "known_vest_unlock_within_3d": None,
+        "btc_30d_realized_vol": None,
+        "btc_ret_30d_prior": None,
     }
     try:
         anchor = datetime.fromisoformat(anchor_iso.replace("Z", "+00:00"))
@@ -312,6 +355,8 @@ def compute_confounds(
     age = listing_age_days(coin_name, anchor, client=client)
     within_7 = (age is not None and age < 7)
     btc7 = btc_return(anchor - timedelta(days=7), anchor, client=client)
+    btc30 = btc_return(anchor - timedelta(days=30), anchor, client=client)
+    rvol30 = btc_30d_realized_vol(anchor, client=client)
     vol24 = perp_vol_change_prior_24h(coin_name, anchor, client=client)
     oi24 = perp_oi_pct_change_prior_24h(coin_name, anchor, sb_client=sb_client) \
         if sb_client is not None else None
@@ -324,4 +369,6 @@ def compute_confounds(
         "perp_vol_change_prior_24h": vol24,
         "perp_oi_pct_change_prior_24h": oi24,
         "known_vest_unlock_within_3d": vest3,
+        "btc_30d_realized_vol": rvol30,
+        "btc_ret_30d_prior": btc30,
     }

@@ -92,11 +92,25 @@ Second scope-expansion in the session. Ships the data collection for the control
 - **DiD analysis** of control-arm returns using `candles.py` (7d post-listing R for each non-Earn listing vs Earn cohort primary R). This is a Phase 3 research task, not infrastructure. Per METHOD §5's "features before backtest" rule the code stays quiet until n ≥ 30 primary events exist.
 - **Perp listings**. `/mix/market/contracts?productType=USDT-FUTURES` gives USDT-M perp openings but Phase 2 primary universe is spot-Earn-anchored. Perp control-arm is an easy add-on later.
 
+## Addendum — METHOD §1.6 regime confound
+
+Closed the gap between gate_report and METHOD §1.6. Prior gate used a 7d BTC magnitude proxy in the "regime" slot — that's macro-magnitude, not regime. This addendum fixes it.
+
+- `db/migrations/008_regime_confound.sql` — adds `btc_30d_realized_vol` and `btc_ret_30d_prior` columns to `earn_event_labels`. **Applied to Supabase.**
+- `src/defi_investor/confounds.py` — new `btc_30d_realized_vol(anchor)`: fetches 4H BTCUSDT candles over prior 30d, computes annualized stdev of log returns (√(6×365) = √2190 factor). Returns None on degenerate input (< 30 bars, zero-variance closes, no candles). Docstring cites METHOD §1.6.
+- `compute_confounds` now returns 8 keys (was 6).
+- `scripts/backfill_labels.py` writes both new columns.
+- `scripts/gate_report.py`:
+  - Replaced `|BTC 7d| <= 10%` split with **`BTC 30d return >= 0`** (bull-regime binary). This is the actual METHOD §1.6 semantic.
+  - Added descriptive **realized-vol tercile** distribution line under the split (not a gate check — §2.2 buckets thin out effective n; reporting only).
+- Tests: +4 in `test_confounds.py` covering synthetic-series realized-vol, flat-series None, insufficient-bars None, no-candles None. **208/208 green** (was 204).
+
 ## Remaining backlog
 
 - **Paid TOTAL3 data source** (session-1 "impatient" item 3). Blocked on operator approval to spend money on CoinGecko Pro or CoinMarketCap. Until then `btc_ret_7d_prior` continues as the macro proxy.
 - **Paid vest data source** (Business tier CryptoRank $149/mo or DefiLlama Pro). Would replace the SSR scraper if the primary universe ever fails on unlock-adjacent split.
 - **PoolX Playwright scraper**. Session 1 deferred as "not urgent for H1 primary universe." Still deferred.
+- **Control-arm DiD analysis** — data now collected, computation deferred to Phase 3.
 
 Everything else is calendar-bound.
 

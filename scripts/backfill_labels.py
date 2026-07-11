@@ -210,6 +210,8 @@ def main() -> int:
                 "perp_vol_change_prior_24h": confounds["perp_vol_change_prior_24h"],
                 "perp_oi_pct_change_prior_24h": confounds["perp_oi_pct_change_prior_24h"],
                 "known_vest_unlock_within_3d": confounds["known_vest_unlock_within_3d"],
+                "btc_30d_realized_vol": confounds["btc_30d_realized_vol"],
+                "btc_ret_30d_prior": confounds["btc_ret_30d_prior"],
             })
 
             if not payload["anchor_ts"]:

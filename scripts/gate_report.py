@@ -244,23 +244,25 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         LOG.warning("control-cohort section failed: %s", e)
 
-    # Confound splits (age, macro, positioning)
+    # Confound splits per METHOD §2.4 item 5: age, regime, positioning.
+    # Regime is the 30d BTC return sign (§1.6). The realized-vol tercile
+    # distribution is reported descriptively below the split.
     def in_age_bucket(r):
         age = r.get("bitget_listing_age_days")
         return age is not None and age >= 30
 
-    def low_btc_move(r):
-        v = r.get("btc_ret_7d_prior")
-        return v is not None and abs(v) <= 0.10
+    def btc_bull_regime(r):
+        v = r.get("btc_ret_30d_prior")
+        return v is not None and v >= 0
 
     def low_vol_ramp(r):
         v = r.get("perp_vol_change_prior_24h")
         return v is not None and abs(v) <= 0.50
 
     split_specs = [
-        ("age >= 30d",           in_age_bucket),
-        ("|BTC 7d| <= 10%",      low_btc_move),
-        ("|vol ramp 24h| <= 50%",low_vol_ramp),
+        ("age >= 30d",             in_age_bucket),
+        ("BTC 30d return >= 0",    btc_bull_regime),
+        ("|vol ramp 24h| <= 50%",  low_vol_ramp),
     ]
     lines += ["-" * 70, "Confound splits (sign must hold across >= 2/3)"]
     sign_hits = 0
@@ -269,6 +271,22 @@ def main() -> int:
         if mean_s is not None and mean_s > 0:
             sign_hits += 1
         lines.append(f"  {name:<25}  n={n_s:3d}  mean R = {_fmt(mean_s)}  ({sign})")
+
+    # Descriptive regime characterization per METHOD §1.6: realized-vol
+    # tercile distribution across the primary universe. Not a gate check —
+    # buckets thin out effective n below §2.2's floor. Reporting only.
+    rvols = [float(r["btc_30d_realized_vol"]) for r in primary
+             if r.get("btc_30d_realized_vol") is not None]
+    if len(rvols) >= 3:
+        q_lo = st.quantiles(rvols, n=3)[0]
+        q_hi = st.quantiles(rvols, n=3)[1]
+        n_lo = sum(1 for v in rvols if v <= q_lo)
+        n_mid = sum(1 for v in rvols if q_lo < v <= q_hi)
+        n_hi = sum(1 for v in rvols if v > q_hi)
+        lines += [
+            f"  Regime vol distribution:  n={len(rvols)}  "
+            f"low(<={q_lo:.2f})={n_lo}  mid={n_mid}  high(>{q_hi:.2f})={n_hi}",
+        ]
 
     # Purged CV summary
     if intervals and len(intervals) >= 6:

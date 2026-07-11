@@ -146,6 +146,8 @@ def test_compute_confounds_returns_stable_keys(monkeypatch):
         "btc_ret_7d_prior", "perp_vol_change_prior_24h",
         "perp_oi_pct_change_prior_24h",
         "known_vest_unlock_within_3d",
+        "btc_30d_realized_vol",
+        "btc_ret_30d_prior",
     }
 
 
@@ -273,6 +275,59 @@ def test_compute_confounds_passes_sb_client_to_oi(monkeypatch):
     )
     assert d["perp_oi_pct_change_prior_24h"] is None
     assert d["known_vest_unlock_within_3d"] is None
+
+
+# --- btc_30d_realized_vol -------------------------------------------------
+
+
+def _mk_btc_4h_series(n_bars: int, base: float = 100.0,
+                     jitter: float = 0.0) -> pd.DataFrame:
+    """Build a synthetic BTC 4H OHLCV frame of length `n_bars`.
+
+    `jitter` is the per-step multiplicative wiggle amplitude — 0.0 gives a
+    flat series (zero realized vol), 0.02 gives ~40% annualized.
+    """
+    import numpy as _np
+    _np.random.seed(42)
+    steps = _np.random.normal(0, jitter, size=n_bars) if jitter else _np.zeros(n_bars)
+    closes = base * _np.cumprod(1 + steps)
+    idx = pd.date_range("2026-06-01", periods=n_bars, freq="4h", tz="UTC")
+    return pd.DataFrame({
+        "open": closes, "high": closes * 1.001, "low": closes * 0.999,
+        "close": closes, "base_vol": 1.0, "quote_vol": 100.0,
+    }, index=idx)
+
+
+def test_btc_30d_realized_vol_positive_when_series_moves(monkeypatch):
+    df = _mk_btc_4h_series(200, jitter=0.02)
+    _patch_fetch(monkeypatch, [(df, "perp")])
+    anchor = datetime(2026, 7, 15, tzinfo=timezone.utc)
+    rv = cf_mod.btc_30d_realized_vol(anchor)
+    assert rv is not None
+    assert rv > 0
+    # Annualized volatility for ~2% per-4H stdev sits well above zero
+    assert 0.1 < rv < 5.0  # sanity bounds, not a strict claim
+
+
+def test_btc_30d_realized_vol_none_when_flat_series(monkeypatch):
+    """Zero-variance close series → degenerate → None (do not fabricate)."""
+    df = _mk_btc_4h_series(200, jitter=0.0)
+    _patch_fetch(monkeypatch, [(df, "perp")])
+    anchor = datetime(2026, 7, 15, tzinfo=timezone.utc)
+    assert cf_mod.btc_30d_realized_vol(anchor) is None
+
+
+def test_btc_30d_realized_vol_none_when_insufficient_bars(monkeypatch):
+    df = _mk_btc_4h_series(10, jitter=0.02)
+    _patch_fetch(monkeypatch, [(df, "perp")])
+    anchor = datetime(2026, 7, 15, tzinfo=timezone.utc)
+    assert cf_mod.btc_30d_realized_vol(anchor) is None
+
+
+def test_btc_30d_realized_vol_none_when_no_candles(monkeypatch):
+    _patch_fetch(monkeypatch, [(pd.DataFrame(), "none")])
+    anchor = datetime(2026, 7, 15, tzinfo=timezone.utc)
+    assert cf_mod.btc_30d_realized_vol(anchor) is None
 
 
 # --- known_vest_unlock_within_3d ------------------------------------------
