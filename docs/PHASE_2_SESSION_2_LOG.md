@@ -56,9 +56,30 @@ Change:
 
 Net corpus: 160/160 green.
 
+## Addendum — vest-unlock scraper (tokenomist.ai SSR)
+
+Operator overrode the session's original recommendation to defer this. Shipped the minimum-effort scraper with honest coverage limits documented in the module header.
+
+- `db/migrations/006_next_unlocks.sql` — `earn_next_unlocks` (coin_name, snapped_at PK) with per-coin descending index + partial index on `WHERE status='tracked_with_unlock'`. **Applied to Supabase** via one-shot psycopg2 script (deleted post-apply).
+- `src/defi_investor/vest_unlocks.py` — parses tokenomist's `<meta description>` regex. Status codes: `tracked_with_unlock` | `no_upcoming_unlock` | `untracked` (404) | `malformed` | `error`. `KNOWN_SLUG_OVERRIDES` seeded with 21 well-known Bitget listings whose slugs differ from lowercased symbol (ARB→arbitrum, PYTH→pyth-network, PUMP→pump-fun, etc.); operator-extendable as low-value 404s show up in the row counts.
+- `src/defi_investor/scraper.py` — vest step only fires on the first cron of each hour (`now.minute < 15`), 4x cadence deflation vs OI. Non-fatal on failure.
+- `src/defi_investor/db.py` — `insert_next_unlocks` on Writer protocol + NoOp + Supabase (composite on_conflict).
+- `src/defi_investor/confounds.py` — `known_vest_unlock_within_3d(coin, anchor, sb_client)` returns True / False / None per METHOD §1.2 tri-state semantics (None = we don't know, distinct from False = tracked but not adjacent).
+- `scripts/backfill_labels.py` — passes value into label upsert. Column already exists on `earn_event_labels` from migration 003.
+- Tests: +30 across `test_vest_unlocks.py`, `test_confounds.py`, `test_scraper.py`, `test_db.py`. **186/186 green** (was 160).
+
+### Coverage floor
+
+Design-level caveat carried forward from research: the SSR only exposes the **single next unlock** per coin, and only for tracked tokens. Realistic coverage of primary universe events: 5-10%. Historical events sold-out before scraper start have no OI, no vest — both stay NULL forever for those, correctly.
+
+### Additional operator to-do
+
+None. Migration applied inline.
+
 ## Remaining backlog
 
 - **Paid TOTAL3 data source** (session-1 "impatient" item 3). Blocked on operator approval to spend money on CoinGecko Pro or CoinMarketCap. Until then `btc_ret_7d_prior` continues as the macro proxy.
+- **Paid vest data source** (Business tier CryptoRank $149/mo or DefiLlama Pro). Would replace the SSR scraper if the primary universe ever fails on unlock-adjacent split.
 
 Everything else is calendar-bound.
 

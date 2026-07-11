@@ -134,14 +134,24 @@ def test_write_catalog_is_sorted(tmp_path: Path):
 
 
 def _stub_snapshot_universe(monkeypatch):
-    """Replace snapshot_universe in the scraper module with a no-op that
-    returns an empty list. Keeps tests offline."""
+    """Replace both OI and vest snapshot universes with no-ops. Keeps
+    tests offline regardless of the hourly-alignment branch."""
     from defi_investor import scraper as scraper_mod
 
     def fake(coin_names, snapped_at=None, client=None, **kw):
         return []
 
     monkeypatch.setattr(scraper_mod, "snapshot_universe", fake)
+    monkeypatch.setattr(scraper_mod, "vest_snapshot_universe", fake)
+
+
+def _freeze_now(monkeypatch, minute: int):
+    """Freeze scraper's _now_utc() to a fixed minute to exercise the
+    hourly-alignment gate on the vest snapshot step."""
+    from datetime import datetime, timezone
+    from defi_investor import scraper as scraper_mod
+    frozen = datetime(2026, 7, 11, 5, minute, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(scraper_mod, "_now_utc", lambda: frozen)
 
 
 def test_full_offline_flow_via_fixture(tmp_path: Path, monkeypatch):
@@ -243,6 +253,10 @@ def test_scraper_persists_oi_snapshots_from_universe(tmp_path: Path, monkeypatch
         ]
 
     monkeypatch.setattr(scraper_mod, "snapshot_universe", fake_snapshots)
+    # Vest step must also stay offline even if this minute happens to be
+    # hourly-aligned. The vest wiring has its own dedicated tests.
+    monkeypatch.setattr(scraper_mod, "vest_snapshot_universe",
+                        lambda *a, **kw: [])
 
     class W:
         def __init__(self):
@@ -280,9 +294,75 @@ def test_scraper_oi_failure_is_non_fatal(tmp_path: Path, monkeypatch):
         raise RuntimeError("bitget rate limit")
 
     monkeypatch.setattr(scraper_mod, "snapshot_universe", boom)
+    # Vest step must stay silent even if it happens to fire this minute.
+    monkeypatch.setattr(scraper_mod, "vest_snapshot_universe",
+                        lambda *a, **kw: [])
 
     result = scraper_mod.run_scrape(project_root=tmp_path)
     # Scrape core stayed correct; OI counters zeroed.
     assert result.events_seen > 0
     assert result.oi_snapshots_taken == 0
     assert result.oi_snapshots_written_remote == 0
+
+
+def test_scraper_vest_step_runs_only_on_hourly_alignment(tmp_path: Path, monkeypatch):
+    """When minute is >= 15, vest step must skip. When < 15, it must fire."""
+    from defi_investor import scraper as scraper_mod
+    from defi_investor.vest_unlocks import NextUnlockSnapshot
+
+    canned_html = FIXTURE.read_text(encoding="utf-8")
+    monkeypatch.setattr(scraper_mod, "fetch_earning_html",
+                        lambda client=None, timeout=30.0: canned_html)
+    monkeypatch.setattr(scraper_mod, "snapshot_universe",
+                        lambda *a, **kw: [])
+
+    calls = {"n": 0}
+
+    def fake_vest(coin_names, snapped_at=None, client=None, **kw):
+        calls["n"] += 1
+        return [NextUnlockSnapshot(
+            coin_name=list(coin_names)[0], snapped_at=snapped_at,
+            tokenomist_slug="x", status="tracked_with_unlock",
+            next_unlock_at="2026-07-16T00:00:00+00:00",
+            http_status=200,
+        )]
+
+    monkeypatch.setattr(scraper_mod, "vest_snapshot_universe", fake_vest)
+
+    # Minute 30 → skip
+    _freeze_now(monkeypatch, 30)
+    r1 = scraper_mod.run_scrape(project_root=tmp_path)
+    assert r1.vest_snapshot_ran is False
+    assert calls["n"] == 0
+    assert r1.vest_snapshots_taken == 0
+
+    # Minute 0 → fire
+    _freeze_now(monkeypatch, 0)
+    r2 = scraper_mod.run_scrape(project_root=tmp_path)
+    assert r2.vest_snapshot_ran is True
+    assert calls["n"] == 1
+    assert r2.vest_snapshots_taken == 1
+    assert r2.vest_snapshots_tracked == 1
+
+
+def test_scraper_vest_failure_is_non_fatal(tmp_path: Path, monkeypatch):
+    """Vest step raising must not abort the scrape."""
+    from defi_investor import scraper as scraper_mod
+
+    canned_html = FIXTURE.read_text(encoding="utf-8")
+    monkeypatch.setattr(scraper_mod, "fetch_earning_html",
+                        lambda client=None, timeout=30.0: canned_html)
+    monkeypatch.setattr(scraper_mod, "snapshot_universe",
+                        lambda *a, **kw: [])
+
+    def boom(*a, **kw):
+        raise RuntimeError("tokenomist down")
+
+    monkeypatch.setattr(scraper_mod, "vest_snapshot_universe", boom)
+    _freeze_now(monkeypatch, 5)
+
+    result = scraper_mod.run_scrape(project_root=tmp_path)
+    assert result.events_seen > 0
+    assert result.vest_snapshot_ran is True
+    assert result.vest_snapshots_taken == 0
+    assert result.vest_snapshots_written_remote == 0

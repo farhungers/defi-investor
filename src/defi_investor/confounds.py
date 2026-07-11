@@ -144,6 +144,11 @@ def perp_vol_change_prior_24h(coin_name: str, anchor_ts: datetime, *,
 _OI_SNAPSHOT_MATCH_TOLERANCE = timedelta(minutes=30)
 _OI_LOOKUP_WINDOW = timedelta(hours=24) + _OI_SNAPSHOT_MATCH_TOLERANCE
 
+_VEST_WINDOW = timedelta(days=3)
+# Widen the query window a bit past the confound window so an anchor
+# on the edge still finds a nearby snapshot to consult.
+_VEST_SNAPSHOT_LOOKUP_TOLERANCE = timedelta(hours=6)
+
 
 def perp_oi_pct_change_prior_24h(
     coin_name: str,
@@ -222,6 +227,61 @@ def _pick_closest(
     return best[1] if best else None
 
 
+def known_vest_unlock_within_3d(
+    coin_name: str,
+    anchor_ts: datetime,
+    *,
+    sb_client,
+) -> Optional[bool]:
+    """True iff any tracked next_unlock_at falls within ±3d of the anchor.
+
+    Reads from `earn_next_unlocks` populated by the hourly vest scraper.
+    Returns:
+      - True  : found at least one tracked snapshot whose next_unlock_at
+                lies inside [anchor - 3d, anchor + 3d].
+      - False : found tracked snapshots for this coin around the anchor
+                time, but none had a next_unlock_at in the window.
+      - None  : no tracked snapshots for this coin in the query window
+                (tokenomist doesn't know this token, or we hadn't started
+                snapshotting yet). METHOD §1.2 residual risk.
+    """
+    if sb_client is None:
+        return None
+    end_ts = anchor_ts + _VEST_SNAPSHOT_LOOKUP_TOLERANCE
+    start_ts = anchor_ts - _VEST_SNAPSHOT_LOOKUP_TOLERANCE
+    try:
+        r = (
+            sb_client.table("earn_next_unlocks")
+            .select("snapped_at,status,next_unlock_at")
+            .eq("coin_name", coin_name.upper())
+            .gte("snapped_at", start_ts.isoformat())
+            .lte("snapped_at", end_ts.isoformat())
+            .order("snapped_at")
+            .execute()
+        )
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("vest snapshot query failed for %s: %s", coin_name, e)
+        return None
+
+    rows = r.data or []
+    tracked = [row for row in rows if row.get("status") == "tracked_with_unlock"]
+    if not tracked:
+        return None
+
+    for row in tracked:
+        iso = row.get("next_unlock_at")
+        if not iso:
+            continue
+        try:
+            unlock_ts = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        delta = unlock_ts - anchor_ts if unlock_ts >= anchor_ts else anchor_ts - unlock_ts
+        if delta <= _VEST_WINDOW:
+            return True
+    return False
+
+
 def compute_confounds(
     coin_name: str,
     anchor_iso: str,
@@ -242,6 +302,7 @@ def compute_confounds(
         "btc_ret_7d_prior": None,
         "perp_vol_change_prior_24h": None,
         "perp_oi_pct_change_prior_24h": None,
+        "known_vest_unlock_within_3d": None,
     }
     try:
         anchor = datetime.fromisoformat(anchor_iso.replace("Z", "+00:00"))
@@ -254,10 +315,13 @@ def compute_confounds(
     vol24 = perp_vol_change_prior_24h(coin_name, anchor, client=client)
     oi24 = perp_oi_pct_change_prior_24h(coin_name, anchor, sb_client=sb_client) \
         if sb_client is not None else None
+    vest3 = known_vest_unlock_within_3d(coin_name, anchor, sb_client=sb_client) \
+        if sb_client is not None else None
     return {
         "bitget_listing_age_days": age,
         "within_7d_of_tge": within_7 if age is not None else None,
         "btc_ret_7d_prior": btc7,
         "perp_vol_change_prior_24h": vol24,
         "perp_oi_pct_change_prior_24h": oi24,
+        "known_vest_unlock_within_3d": vest3,
     }

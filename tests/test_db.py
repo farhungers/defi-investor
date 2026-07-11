@@ -257,6 +257,43 @@ def test_insert_oi_snapshots_empty_is_noop():
     assert "earn_oi_snapshots" not in client.tables
 
 
+# ---------- insert_next_unlocks -------------------------------------------
+
+def test_noop_insert_next_unlocks_returns_zero():
+    assert NoOpWriter().insert_next_unlocks(
+        [{"coin_name": "ARB", "snapped_at": "2026-07-11T00:00:00+00:00",
+          "tokenomist_slug": "arbitrum", "status": "tracked_with_unlock",
+          "next_unlock_at": "2026-07-16T00:00:00+00:00",
+          "next_unlock_amount": 1.0, "next_unlock_usd": 1.0,
+          "http_status": 200, "error": None}]
+    ) == 0
+
+
+def test_insert_next_unlocks_uses_composite_on_conflict():
+    client = FakeClient()
+    w = SupabaseWriter(client=client)
+    rows = [
+        {"coin_name": "ARB", "snapped_at": "2026-07-11T00:00:00+00:00",
+         "tokenomist_slug": "arbitrum", "status": "tracked_with_unlock",
+         "next_unlock_at": "2026-07-16T00:00:00+00:00",
+         "next_unlock_amount": 1.0, "next_unlock_usd": 1.0,
+         "http_status": 200, "error": None},
+    ]
+    n = w.insert_next_unlocks(rows)
+    assert n == 1
+    calls = client.tables["earn_next_unlocks"].calls
+    assert len(calls) == 1
+    assert calls[0]["op"] == "upsert"
+    assert calls[0]["on_conflict"] == "coin_name,snapped_at"
+
+
+def test_insert_next_unlocks_empty_is_noop():
+    client = FakeClient()
+    w = SupabaseWriter(client=client)
+    assert w.insert_next_unlocks([]) == 0
+    assert "earn_next_unlocks" not in client.tables
+
+
 # ---------- fetch_events pagination -----------------------------------------
 
 class PaginatingFakeQuery:

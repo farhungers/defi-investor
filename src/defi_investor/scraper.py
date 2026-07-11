@@ -31,6 +31,7 @@ from .models import EarnEvent, SCRAPER_VERSION
 from .notifier import Notifier, build_notifier, dispatch_scrape_notifications
 from .oi_snapshots import snapshot_universe
 from .parsers.next_data import parse_earning_page
+from .vest_unlocks import snapshot_universe as vest_snapshot_universe
 
 
 LOG = logging.getLogger("defi_investor.scraper")
@@ -57,6 +58,10 @@ class ScrapeResult:
     oi_snapshots_taken: int = 0
     oi_snapshots_with_perp: int = 0
     oi_snapshots_written_remote: int = 0
+    vest_snapshots_taken: int = 0
+    vest_snapshots_tracked: int = 0
+    vest_snapshots_written_remote: int = 0
+    vest_snapshot_ran: bool = False
 
 
 def _now_utc() -> datetime:
@@ -297,8 +302,8 @@ def run_scrape(
     n_snaps = 0
     n_with_perp = 0
     n_snaps_written = 0
+    distinct_coins = sorted({ev.coin_name for ev in merged.values() if ev.coin_name})
     try:
-        distinct_coins = sorted({ev.coin_name for ev in merged.values() if ev.coin_name})
         snapshots = snapshot_universe(distinct_coins, snapped_at=scraped_at)
         n_snaps = len(snapshots)
         n_with_perp = sum(1 for s in snapshots if s.oi_base is not None)
@@ -308,6 +313,26 @@ def run_scrape(
                  n_snaps, n_with_perp, n_snaps_written)
     except Exception as e:
         LOG.warning("oi snapshot step failed (non-fatal): %s", e)
+
+    # Vest-unlock snapshot: only fires on hourly-aligned runs. Vest schedules
+    # change on the order of days; the 4x deflation vs OI cadence keeps the
+    # /15 cron under its 5-min budget. Non-fatal on failure.
+    vest_ran = False
+    n_vest = 0
+    n_vest_tracked = 0
+    n_vest_written = 0
+    if now.minute < 15:  # first cron in every hour
+        vest_ran = True
+        try:
+            v_snaps = vest_snapshot_universe(distinct_coins, snapped_at=scraped_at)
+            n_vest = len(v_snaps)
+            n_vest_tracked = sum(1 for s in v_snaps if s.status == "tracked_with_unlock")
+            if v_snaps:
+                n_vest_written = writer.insert_next_unlocks([s.to_row() for s in v_snaps])
+            LOG.info("vest snapshot: %d coins, %d tracked with unlock, %d persisted",
+                     n_vest, n_vest_tracked, n_vest_written)
+        except Exception as e:
+            LOG.warning("vest snapshot step failed (non-fatal): %s", e)
 
     return ScrapeResult(
         scraped_at=scraped_at,
@@ -323,6 +348,10 @@ def run_scrape(
         oi_snapshots_taken=n_snaps,
         oi_snapshots_with_perp=n_with_perp,
         oi_snapshots_written_remote=n_snaps_written,
+        vest_snapshots_taken=n_vest,
+        vest_snapshots_tracked=n_vest_tracked,
+        vest_snapshots_written_remote=n_vest_written,
+        vest_snapshot_ran=vest_ran,
     )
 
 
@@ -352,6 +381,10 @@ def main() -> None:
         "oi_snapshots_taken": result.oi_snapshots_taken,
         "oi_snapshots_with_perp": result.oi_snapshots_with_perp,
         "oi_snapshots_written_remote": result.oi_snapshots_written_remote,
+        "vest_snapshot_ran": result.vest_snapshot_ran,
+        "vest_snapshots_taken": result.vest_snapshots_taken,
+        "vest_snapshots_tracked": result.vest_snapshots_tracked,
+        "vest_snapshots_written_remote": result.vest_snapshots_written_remote,
         "raw_capture_sha256_head": result.raw_capture_sha256[:12],
         "raw_capture_path": str(result.raw_capture_path),
     }, indent=2))

@@ -145,6 +145,7 @@ def test_compute_confounds_returns_stable_keys(monkeypatch):
         "bitget_listing_age_days", "within_7d_of_tge",
         "btc_ret_7d_prior", "perp_vol_change_prior_24h",
         "perp_oi_pct_change_prior_24h",
+        "known_vest_unlock_within_3d",
     }
 
 
@@ -271,4 +272,92 @@ def test_compute_confounds_passes_sb_client_to_oi(monkeypatch):
         "LAB", "2026-07-10T00:00:00+00:00", sb_client=sb,
     )
     assert d["perp_oi_pct_change_prior_24h"] is None
-    assert "perp_oi_pct_change_prior_24h" in d
+    assert d["known_vest_unlock_within_3d"] is None
+
+
+# --- known_vest_unlock_within_3d ------------------------------------------
+
+
+class _MultiTableSb:
+    """Per-table row store. Table name -> pre-seeded rows to return."""
+    def __init__(self, tables: dict[str, list[dict]]):
+        self._tables = tables
+
+    def table(self, name):
+        rows = self._tables.get(name, [])
+        return _StubSbTable(rows)
+
+
+def test_vest_confound_none_without_client():
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    assert cf_mod.known_vest_unlock_within_3d(
+        "ARB", anchor, sb_client=None,
+    ) is None
+
+
+def test_vest_confound_true_when_unlock_falls_in_window():
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    unlock = (anchor + timedelta(days=1)).isoformat()  # +1d, inside ±3d
+    sb = _MultiTableSb({
+        "earn_next_unlocks": [
+            {"snapped_at": anchor.isoformat(),
+             "status": "tracked_with_unlock",
+             "next_unlock_at": unlock},
+        ],
+    })
+    assert cf_mod.known_vest_unlock_within_3d(
+        "ARB", anchor, sb_client=sb,
+    ) is True
+
+
+def test_vest_confound_false_when_tracked_but_unlock_outside_window():
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    unlock = (anchor + timedelta(days=10)).isoformat()  # outside ±3d
+    sb = _MultiTableSb({
+        "earn_next_unlocks": [
+            {"snapped_at": anchor.isoformat(),
+             "status": "tracked_with_unlock",
+             "next_unlock_at": unlock},
+        ],
+    })
+    assert cf_mod.known_vest_unlock_within_3d(
+        "ARB", anchor, sb_client=sb,
+    ) is False
+
+
+def test_vest_confound_none_when_only_untracked_rows():
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    sb = _MultiTableSb({
+        "earn_next_unlocks": [
+            {"snapped_at": anchor.isoformat(),
+             "status": "untracked", "next_unlock_at": None},
+        ],
+    })
+    assert cf_mod.known_vest_unlock_within_3d(
+        "LAB", anchor, sb_client=sb,
+    ) is None
+
+
+def test_vest_confound_none_when_no_rows_at_all():
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    sb = _MultiTableSb({"earn_next_unlocks": []})
+    assert cf_mod.known_vest_unlock_within_3d(
+        "LAB", anchor, sb_client=sb,
+    ) is None
+
+
+def test_vest_confound_survives_query_exception():
+    class BrokenSb:
+        def table(self, _n):
+            class T:
+                def select(self, *a, **k): return self
+                def eq(self, *a, **k): return self
+                def gte(self, *a, **k): return self
+                def lte(self, *a, **k): return self
+                def order(self, *a, **k): return self
+                def execute(self): raise RuntimeError("boom")
+            return T()
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    assert cf_mod.known_vest_unlock_within_3d(
+        "ARB", anchor, sb_client=BrokenSb(),
+    ) is None

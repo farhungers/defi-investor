@@ -16,11 +16,10 @@ Component status:
 - Scraper (Phase 1): LIVE. `earn_events` ≈399 rows, `earn_events_status_log` accumulating 2→6 transitions.
 - Telegram alerts: LIVE. `@Defiinvestor_Bot` sends observation-only rich cards on new listings, sold-outs, re-opens, stalls, drift.
 - Labeler (Phase 2): LIVE, nightly. `earn_event_labels` at 104 rows across 4 labeler versions. `LABELER_VERSION = "0.2.1"` current.
-- OI snapshots (Phase 2 session 2): CODE READY, needs migration 005 applied and next scraper cron to fire. Populates `earn_oi_snapshots` for the `perp_oi_pct_change_prior_24h` confound.
+- OI snapshots (Phase 2 session 2): CODE READY, migration 005 applied. Populates `earn_oi_snapshots` for the `perp_oi_pct_change_prior_24h` confound from the next `*/15` cron on.
+- Vest unlocks (Phase 2 session 2): CODE READY, migration 006 applied. Populates `earn_next_unlocks` from tokenomist.ai SSR on the hourly-aligned scrape. 5-10% coverage expected per METHOD §1.2 acceptance.
 - Backtest primitives: BUILT FROM SCRATCH from de Prado Ch 7 (purged CV) + Ch 14 (PSR / HHI / uniqueness). No sibling reads.
 - Gate report: `scripts/gate_report.py` runnable today, will print meaningful primary universe once first 7-day windows close (~2026-07-16 onward).
-
-**Operator to-do before next scrape cron:** apply `db/migrations/005_oi_snapshots.sql` to Supabase. Until then the scraper logs a non-fatal warning and no OI rows land.
 
 **Immediate next-session behavior:** WATCH, DO NOT TOUCH. Second Law per CHARTER §5. Real Phase 3 gate call is n ≥ 30 primary universe. Realistic ETA 2-4 weeks.
 

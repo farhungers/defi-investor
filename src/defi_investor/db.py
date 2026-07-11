@@ -32,6 +32,7 @@ class Writer(Protocol):
     ) -> int: ...
     def fetch_events(self) -> dict[str, EarnEvent]: ...
     def insert_oi_snapshots(self, rows: Sequence[dict]) -> int: ...
+    def insert_next_unlocks(self, rows: Sequence[dict]) -> int: ...
 
 
 class NoOpWriter:
@@ -57,6 +58,10 @@ class NoOpWriter:
 
     def insert_oi_snapshots(self, rows: Sequence[dict]) -> int:
         LOG.debug("NoOpWriter.insert_oi_snapshots: %d rows discarded", len(rows))
+        return 0
+
+    def insert_next_unlocks(self, rows: Sequence[dict]) -> int:
+        LOG.debug("NoOpWriter.insert_next_unlocks: %d rows discarded", len(rows))
         return 0
 
 
@@ -159,6 +164,25 @@ class SupabaseWriter:
             start += self.FETCH_PAGE_SIZE
         LOG.info("SupabaseWriter.fetch_events: hydrated %d rows", len(catalog))
         return catalog
+
+    NEXT_UNLOCKS_UPSERT_BATCH_SIZE = 500
+
+    def insert_next_unlocks(self, rows: Sequence[dict]) -> int:
+        """Upsert next-unlock snapshots on the (coin_name, snapped_at) PK."""
+        if not rows:
+            return 0
+        n = 0
+        for start in range(0, len(rows), self.NEXT_UNLOCKS_UPSERT_BATCH_SIZE):
+            batch = list(rows[start:start + self.NEXT_UNLOCKS_UPSERT_BATCH_SIZE])
+            (
+                self._client
+                .table("earn_next_unlocks")
+                .upsert(batch, on_conflict="coin_name,snapped_at")
+                .execute()
+            )
+            n += len(batch)
+        LOG.info("SupabaseWriter.insert_next_unlocks: %d rows", n)
+        return n
 
     OI_UPSERT_BATCH_SIZE = 500
 
