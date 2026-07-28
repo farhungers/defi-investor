@@ -51,15 +51,28 @@ Kill the corpus-arrival bottleneck. Fix bugs. Get the pre-registration infrastru
 1. cron-job.org account + fine-grained PAT (`workflow_dispatch` scope only)
 2. OSF account + API token
 
-### Phase 3c — Binance data sprint (~2 weeks)
+### Phase 3c — Binance data sprint (~2 weeks) — IN PROGRESS
 Corpus doubler. First real implementation of Decision 1 (multi-venue) + Decision 2 (Binance-first).
 
-- [ ] Binance Simple Earn scraper (mirror of Bitget structure)
-- [ ] Cross-venue coin mapping table (`bitget_binance_coin_map`)
-- [ ] Extend `earn_events` schema to hold `venue` field
-- [ ] Deploy Binance scraper to external cron
+- [x] Reverse-engineer Binance public Simple Earn endpoint (no auth needed; `GET /bapi/earn/v1/friendly/finance-earn/simple-earn/homepage/details`)
+- [x] Binance Simple Earn parser (`src/defi_investor/parsers/binance_earn.py`, 12 unit tests)
+- [x] Binance fetch layer with pagination (`src/defi_investor/binance_earn_fetch.py`)
+- [x] Dry-run CLI (`scripts/binance_earn_dryrun.py`) — verified: 421/421 products parsed, APY 0-53%, 14 above alert threshold
+- [x] Extend `earn_events` schema to hold `venue` field (Migration 009 drafted; not yet applied to Supabase)
+- [x] Add `venue` field to `EarnEvent` dataclass (default `'bitget'`, backward-compat)
+- [ ] Cross-venue coin mapping table (`venue_coin_map`) — schema drafted in Migration 009; seeding deferred
+- [ ] Wire Binance fetch into main scraper.py (multi-venue merge, venue-scoped upserts)
+- [ ] Extend db.py Writer for `(venue, product_id)` composite key upserts
+- [ ] Apply Migration 009 to Supabase
+- [ ] Deploy Binance scraper to external cron (adds a second cron-job.org entry OR extends existing scrape to fetch both venues in one run — TBD, latter is cheaper)
 - [ ] Cross-venue anchor-timing test (Decision 5's timing test — Second Law-safe)
 - [ ] Coverage forecast model (updated with real Binance intake)
+
+**Adjustment observed in this phase** (2026-07-28): Binance homepage endpoint only returns *currently available* products (`sellOut: False` on every observed row). This is a semantic difference from Bitget, which explicitly ships a `status=6` sold_out flag on stale products. Consequence: sold-out detection on Binance depends entirely on diff-based state comparison (product_id present in scrape N, absent in scrape N+1 = sold_out event). Anchor definition remains the same in effect (`sold_out_first_seen_at`), but under the hood the trigger is different. Documented in `parsers/binance_earn.py` docstring.
+
+**Adjustment observed 2**: Binance ships APY as decimal fraction (0.05 = 5%); Bitget ships as percentage-point (5.0 = 5%). Parser normalizes to percentage at parse time so `MIN_APR_FOR_ALERT` gate applies uniformly.
+
+**Adjustment observed 3**: Binance active catalog is ~421 products vs Bitget's active count of ~50-80 (from `earn_events` where status=2 as of Session 2 wrap). Roughly 5-8× intake per scrape, which comfortably clears the "≥1.5× within 4 weeks" trigger below. Real event rate (new/sold-out per day) will be lower and is what actually matters for the corpus doubler thesis; observe first.
 
 **Adjustment trigger 1**: if Binance intake doesn't at least 1.5× current Bitget-only rate within 4 weeks of deploy, invoke Decision 2 A3 kill-switch (stop expanding venues, reconsider hypothesis).
 
@@ -120,3 +133,4 @@ Weekly self-check: run through the adjustment triggers list above. If any is tri
 | Date | Revision | Reason |
 |---|---|---|
 | 2026-07-28 | v2.0 initial draft | Decisions 1-6 locked in Session 3 |
+| 2026-07-28 | Phase 3c mid-progress | Binance parser + fetch + dry-run shipped; 3 empirical adjustments logged in Phase 3c section (sold-out semantics, APY unit, catalog size) |

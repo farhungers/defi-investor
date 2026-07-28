@@ -31,6 +31,7 @@ class EarnEvent:
     product_id: str
     coin_name: str
     second_biz_line: str  # 'Savings', 'PosStaking', 'SharkFin', 'CashPlus', 'FundMarket', 'Trend'
+    venue: str = "bitget"  # 'bitget' | 'binance' | ... — introduced Phase 3c multi-venue
 
     # Pricing
     max_apy: Optional[float] = None
