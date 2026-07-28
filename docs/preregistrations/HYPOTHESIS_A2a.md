@@ -55,9 +55,11 @@ All of the following must PASS on the primary universe at the decision date. Fam
 5. **Selection bias / survivorship.** Coins that de-listed between event and horizon are dropped. If de-listings correlate with negative post-event returns, mean R is biased upward.
 6. **Multiple testing across cohorts.** Without kill counter discipline, easy to find "signal" by slicing (meme vs serious, small-cap vs mid-cap, APR bucket, etc.). Kill counter tracks these; cohort splits require pre-registration.
 7. **Reverse causality on our own data.** If Vault (this Claude instance) or the user acts on the signal — even in observation mode — it perturbs the market. Currently mitigated by observation-only cards; would break the moment we act.
+8. **Family-wise correction may under-count trials (added 2026-07-28 by Kepler after deep-reading LIB_0002).** The gate correction uses `alpha / N_registered` with `N=3` (A2a, A2b, A3). Under Bailey & de Prado (2014) DSR framework, `N` should be the number of independent **trials**, not hypotheses. Our multi-horizon CV over {24h, 48h, 168h} formally counts as 3 trials per hypothesis, so the effective N is closer to 9. Under Bailey & de Prado's 1/e optimal-stopping rule we've also already exceeded the number of configurations that should be evaluated. Consequence: a marginal PASS on the current Holm-Bonferroni correction (`alpha/3`) may be a false positive under proper DSR (`alpha/9` or DSR with effective N̂). **A marginal gate PASS should be treated with skepticism and re-checked under DSR before any downstream action.** Not amending the correction method mid-experiment (per Second Law); logging this as a red-team acknowledgment instead.
 
 ## Amendment log
 
 | Date | Change | Reason |
 |---|---|---|
 | 2026-07-28 | v1 initial (retroactive) registration | Decisions 5 + FRAME_C1 lock |
+| 2026-07-28 | Red-team item #8 added — DSR N-count caveat | Deep-read of LIB_0002 surfaced that our family-wise divisor under-counts trials. No change to gate correction (Second Law); documented as red-team caveat only. |

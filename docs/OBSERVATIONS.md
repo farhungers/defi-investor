@@ -103,6 +103,31 @@ Same fix mirrored in the integration test's local helper. Docstring on the fixed
 - The 5-minute job-timeout root cause (too many steps in one job). Actually a bigger problem — even with rotation, if the vest step doesn't complete in the budget, no writes land. Follow-up: consider splitting vest to its own workflow file with its own external cron trigger. Requires user to add a second cron-job.org entry. Deferred.
 
 **Update, later same day.** Bumped `scrape.yml` `timeout-minutes` from 5 → 10 as the minimal effective fix. Worst-case current pipeline is ~7 min; new margin is ~3 min. Splitting vest to its own workflow remains available as a long-term option if the universe grows past what 10 min can cover.
+
+## 2026-07-28 — v0.3.0 backfill: 0 labels, 21 rows all unlabelable (Kepler)
+
+**Setup.** Ran `scripts/backfill_labels_v030.py` live against production for the first time. 8 sold-out events (7 Bitget + 1 Binance); 2 skipped as `stale_anchor` (per METHOD §5.1), 7 processed → 21 rows written (× 3 horizons per event).
+
+**Result.** All 21 rows have `unlabelable_reason` set. Two failure modes:
+
+- **9 rows / 3 events: `no_daily_candles`.** Coins `preOPAI`, `FUEL`, `PREOPAI` etc. return empty results for both perp (`USDT-FUTURES/candles`) and spot (`/spot/market/candles`) endpoints. Likely delisted from Bitget after listing on Earn — Earn products can outlive spot listings, especially for very-low-cap/promo tokens. Or the coin never had a Bitget market to begin with (Earn program without exchange listing).
+
+- **12 rows / 4 events: `anchor_before_first_walk_bar`.** Coins have daily candles (sigma_20d computable) but the 1-minute walk fetch does NOT return bars extending back to the anchor. Anchors are 2026-07-09 (18+ days old); **Bitget's public 1-minute klines endpoint appears to have limited retention** — empirically returns bars only for a recent window (needs measurement; probably 7-30 days, but the API doesn't document this cleanly).
+
+**Implications.**
+
+- A2b's primary universe is effectively **forward-looking only** for the 1m-walk path. Events with sold-out anchors from before Bitget's 1m retention horizon (~7-30 days?) cannot be labeled retrospectively. Combined with the stale-anchor filter (which already dropped 6/8 events), the effective retrospective corpus for A2b is 0.
+- **Not a code bug** — the labeler correctly detects the missing data and marks it unlabelable rather than fabricating a label. This is the pre-registered exclusion behavior.
+- **Not a pre-registration violation** — A2b spec says "Price source: Bitget spot 1m klines" and does not commit to any retention window. Missing data → excluded from primary. Working as designed.
+
+**What this doesn't reveal.** Whether the 1m retention is truly the barrier vs some other API quirk (paginated fetch stopping early, symbol mapping wrong, etc.). A dedicated diagnostic script could measure Bitget's actual 1m retention empirically — but Second-Law-adjacent, since it would inform whether to relax the spec. Deferred.
+
+**Non-implications.**
+
+- Does NOT block the A2b gate call — events sold-out AFTER today, if scraped and labeled promptly (within ~7 days while 1m data is available), will populate the primary universe normally.
+- Does NOT weaken A2a (fixed-horizon v0.2.1 uses 4H bars which have longer retention; 1 resolved v0.2.1 label already exists for SKYAI).
+
+**Roadmap addition.** Add empirical Bitget 1m/4H retention measurement as a Phase 3-adjacent diagnostic. Also add a proactive "backfill within X days of sold-out" cadence check to `backfill_labels_v030.py` so we don't lose events by delay.
 - Existing v0.2.1 label rows won't retrospectively get `known_vest_unlock_within_3d` populated. Would need a manual UPDATE against Supabase, but with only 1 resolved label in the batch this doesn't materially move the gate.
 
 **Systematic lesson.** Confound-instrumentation bugs are silent by nature: `NULL` on a confound column just means "not evaluated." Whenever we add a confound to the labeler, we should also add a coverage-monitoring assertion (e.g. "at least X% of resolved primary labels have this confound populated") so a broken data-collection pipeline shows up loudly.
