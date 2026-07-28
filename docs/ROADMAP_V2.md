@@ -79,15 +79,16 @@ Corpus doubler. First real implementation of Decision 1 (multi-venue) + Decision
 
 **Adjustment trigger 2**: if cross-venue anchor-timing shows Binance sold_out consistently precedes Bitget sold_out by more than a threshold (TBD in FRAME_C1.md), rethink whether v0.3.0 should anchor on Binance instead of Bitget.
 
-### Phase 3d — Labeler + pre-registration lockdown (~2 weeks)
+### Phase 3d — Labeler + pre-registration lockdown (~2 weeks) — IN PROGRESS
 The pre-registered infrastructure that gates depend on.
 
-- [ ] `HYPOTHESIS_A2a.md` + `A2a.yaml` — v0.2.1 fixed-horizon, formal pre-reg
-- [ ] `HYPOTHESIS_A2b.md` + `A2b.yaml` — v0.3.0 triple-barrier, formal pre-reg
-- [ ] Build `src/defi_investor/labelers/triple_barrier.py` — labeler v0.3.0
+- [x] `HYPOTHESIS_A2a.md` + `A2a.yaml` — v0.2.1 fixed-horizon, formal pre-reg (done in Phase 3b)
+- [x] `HYPOTHESIS_A2b.md` + `A2b.yaml` — v0.3.0 triple-barrier, formal pre-reg (done in Phase 3b)
+- [x] `compute_sigma_realized()` + `resample_to_daily()` in `candles.py` — the barrier-width primitives for v0.3.0 (8 tests, 233/233 total)
+- [ ] Build v0.3.0 triple-barrier labeler on top of `compute_sigma_realized` (next iteration)
 - [ ] Extend `scripts/gate_report.py` for multi-hypothesis + Holm-Bonferroni correction
-- [ ] `KILL_COUNTER.md` — running ledger; auto-updated by gate report
-- [ ] Git-tag each pre-registration at commit; upload to OSF
+- [x] `KILL_COUNTER.md` — running ledger (done in Phase 3b)
+- [x] Git-tag each pre-registration at commit; upload to OSF (done in Phase 3b — commit 385e5a6)
 
 **Adjustment trigger**: if triple-barrier produces wildly different labels than fixed-horizon on same events, don't touch either — investigate whether it's a labeler bug vs a legitimate methodological difference (deep-read AFML Ch 3 if needed).
 
@@ -136,3 +137,4 @@ Weekly self-check: run through the adjustment triggers list above. If any is tri
 | 2026-07-28 | v2.0 initial draft | Decisions 1-6 locked in Session 3 |
 | 2026-07-28 | Phase 3c mid-progress | Binance parser + fetch + dry-run shipped; 3 empirical adjustments logged in Phase 3c section (sold-out semantics, APY unit, catalog size) |
 | 2026-07-28 | Phase 3c iter 2 | Standalone binance_scrape orchestrator with diff-based sold-out detection; Migration 009 revised to composite PK + widened FKs; 225/225 tests. Blocker: user greenlight to apply Migration 009 to Supabase before wiring Binance into the live write path. |
+| 2026-07-28 | Phase 3c → 3d pivot | Phase 3c parked on Supabase-migration blocker; opened Phase 3d with sigma_20d realized-vol utility (compute_sigma_realized + resample_to_daily in candles.py). 233/233 tests. |
