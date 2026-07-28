@@ -72,6 +72,39 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Minimum age of the last listings snapshot before we take a new one.
+# 20h is a slack floor under 24h — if a scrape happens once an hour,
+# the next scrape after 20h will trigger a fresh snapshot regardless
+# of which hour it lands on. Prevents 24-hour dark windows when the
+# 03:00 UTC cron fails or doesn't fire.
+_LISTINGS_MIN_AGE_HOURS = 20
+
+
+def _should_snapshot_listings(writer, now: datetime) -> bool:
+    """True iff the last listings snapshot is either missing or old enough."""
+    try:
+        prior = writer.fetch_bitget_listings()
+    except Exception:  # noqa: BLE001
+        # If the fetch itself fails, be conservative and try to snapshot.
+        return True
+    if not prior:
+        return True
+    # `prior` is {symbol -> row_dict}. Take the max last_seen_at across all.
+    latest_iso = ""
+    for row in prior.values():
+        v = row.get("last_seen_at") or ""
+        if v > latest_iso:
+            latest_iso = v
+    if not latest_iso:
+        return True
+    try:
+        latest = datetime.fromisoformat(latest_iso.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return True
+    age_hours = (now - latest).total_seconds() / 3600.0
+    return age_hours >= _LISTINGS_MIN_AGE_HOURS
+
+
 def _atomic_write(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp_", suffix=".part")
@@ -338,13 +371,15 @@ def run_scrape(
         except Exception as e:
             LOG.warning("vest snapshot step failed (non-fatal): %s", e)
 
-    # Bitget listings control-arm snapshot: once per day, at hour 03 UTC on
-    # the first cron of the hour. Daily cadence is enough — `openTime` is
-    # stable and Bitget adds a few pairs per week at most. Non-fatal.
+    # Bitget listings control-arm snapshot: fires on the first scrape of
+    # each UTC day AFTER the previous snapshot is >= 20h old. Older wiring
+    # gated on `hour == 3 AND minute < 15` — that made the step silently
+    # skip whenever the 03:00 UTC cron didn't fire (which happened for
+    # weeks when the private-repo GH cron was throttled). Non-fatal.
     listings_ran = False
     n_listings = 0
     n_listings_written = 0
-    if now.hour == 3 and now.minute < 15:
+    if _should_snapshot_listings(writer, now):
         listings_ran = True
         try:
             listings, stats = bitget_snapshot_listings(observed_at=scraped_at)

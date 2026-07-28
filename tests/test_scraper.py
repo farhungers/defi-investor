@@ -384,8 +384,9 @@ def test_scraper_vest_failure_is_non_fatal(tmp_path: Path, monkeypatch):
     assert result.vest_snapshots_written_remote == 0
 
 
-def test_scraper_listings_step_gates_on_daily_alignment(tmp_path: Path, monkeypatch):
-    """Listings step must fire only when hour==3 AND minute<15."""
+def test_scraper_listings_step_fires_when_prior_missing_or_stale(tmp_path: Path, monkeypatch):
+    """Listings step fires when there's no prior snapshot OR when the most
+    recent is >= _LISTINGS_MIN_AGE_HOURS old, regardless of hour."""
     from defi_investor import scraper as scraper_mod
     from defi_investor.bitget_listings import BitgetListing
 
@@ -409,28 +410,40 @@ def test_scraper_listings_step_gates_on_daily_alignment(tmp_path: Path, monkeypa
 
     monkeypatch.setattr(scraper_mod, "bitget_snapshot_listings", fake_listings)
 
-    # Hour 3 minute 30 → skip (past the 15-min gate)
     from datetime import datetime, timezone as _tz
-    frozen = datetime(2026, 7, 11, 3, 30, tzinfo=_tz.utc)
-    monkeypatch.setattr(scraper_mod, "_now_utc", lambda: frozen)
+    NOW = datetime(2026, 7, 28, 14, 30, tzinfo=_tz.utc)  # arbitrary non-03 hour
+    monkeypatch.setattr(scraper_mod, "_now_utc", lambda: NOW)
+
+    # 1. Cold-start (NoOpWriter returns {} for fetch_bitget_listings): fires.
     r1 = scraper_mod.run_scrape(project_root=tmp_path)
-    assert r1.listings_snapshot_ran is False
-    assert calls["n"] == 0
-
-    # Hour 4 minute 0 → skip (wrong hour)
-    frozen4 = datetime(2026, 7, 11, 4, 0, tzinfo=_tz.utc)
-    monkeypatch.setattr(scraper_mod, "_now_utc", lambda: frozen4)
-    r2 = scraper_mod.run_scrape(project_root=tmp_path)
-    assert r2.listings_snapshot_ran is False
-    assert calls["n"] == 0
-
-    # Hour 3 minute 5 → fire
-    frozen35 = datetime(2026, 7, 11, 3, 5, tzinfo=_tz.utc)
-    monkeypatch.setattr(scraper_mod, "_now_utc", lambda: frozen35)
-    r3 = scraper_mod.run_scrape(project_root=tmp_path)
-    assert r3.listings_snapshot_ran is True
+    assert r1.listings_snapshot_ran is True
     assert calls["n"] == 1
-    assert r3.listings_fetched == 1
+
+    # 2. Prior snapshot 21h old: fires again (>= 20h floor).
+    stale_iso = (NOW - __import__("datetime").timedelta(hours=21)).isoformat()
+
+    class WriterWithStale:
+        def upsert_events(self, events): return 0
+        def log_status_transitions(self, *a, **kw): return 0
+        def fetch_events(self, *, venue="bitget"): return {}
+        def insert_oi_snapshots(self, rows): return 0
+        def insert_next_unlocks(self, rows): return 0
+        def upsert_bitget_listings(self, rows): return len(rows)
+        def fetch_bitget_listings(self):
+            return {"OLDUSDT": {"last_seen_at": stale_iso}}
+    r2 = scraper_mod.run_scrape(project_root=tmp_path, writer=WriterWithStale())
+    assert r2.listings_snapshot_ran is True
+    assert calls["n"] == 2
+
+    # 3. Prior snapshot 3h old: skip (well under 20h floor).
+    fresh_iso = (NOW - __import__("datetime").timedelta(hours=3)).isoformat()
+
+    class WriterWithFresh(WriterWithStale):
+        def fetch_bitget_listings(self):
+            return {"OLDUSDT": {"last_seen_at": fresh_iso}}
+    r3 = scraper_mod.run_scrape(project_root=tmp_path, writer=WriterWithFresh())
+    assert r3.listings_snapshot_ran is False
+    assert calls["n"] == 2  # unchanged from previous
 
 
 def test_scraper_listings_failure_is_non_fatal(tmp_path: Path, monkeypatch):

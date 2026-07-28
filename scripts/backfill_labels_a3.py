@@ -153,11 +153,29 @@ def _fetch_r_24h(
 
 
 def _label_from_asymmetry(asymmetry: Optional[float]) -> Optional[int]:
+    """HYPOTHESIS_A3 label mapping.
+
+    Spec: +1 if ask-side contraction >= theta_asym; -1 if bid-side
+    contraction >= theta_asym; 0 otherwise.
+
+    The feature formula makes ask contraction NEGATIVE
+    (log(ask_pre/ask_pre_pre) contributes with a minus sign relative to
+    the bid term), so:
+        ask contraction => asymmetry <= -theta_asym => label +1
+        bid contraction => asymmetry >= +theta_asym => label -1
+
+    Discovered 2026-07-28 by the A3 integration test — a naive
+    "if asymmetry >= theta then +1" mapping would invert the whole
+    hypothesis direction. Since no A3 labels have been written yet
+    (Migration 010 unapplied, capture_daemon not deployed), this fix
+    predates any published label rows and does NOT violate the
+    pre-registration.
+    """
     if asymmetry is None:
         return None
-    if asymmetry >= THETA_ASYM:
-        return +1
     if asymmetry <= -THETA_ASYM:
+        return +1
+    if asymmetry >= THETA_ASYM:
         return -1
     return 0
 
