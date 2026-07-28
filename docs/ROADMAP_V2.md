@@ -86,7 +86,8 @@ The pre-registered infrastructure that gates depend on.
 - [x] `HYPOTHESIS_A2b.md` + `A2b.yaml` — v0.3.0 triple-barrier, formal pre-reg (done in Phase 3b)
 - [x] `compute_sigma_realized()` + `resample_to_daily()` in `candles.py` — the barrier-width primitives for v0.3.0 (8 tests, 233/233 total)
 - [x] Build v0.3.0 triple-barrier labeler on top of `compute_sigma_realized` (`src/defi_investor/labelers/triple_barrier_v030.py`, `LabelRowV030` returns one row per horizon in `{24h, 48h, 168h}`; 9 tests covering flat, up, down, insufficient-history, truncated-walk, multiplicative-barrier-math; 242/242 total)
-- [ ] Wire v0.3.0 labeler into a backfill script (parallel to `scripts/backfill_labels.py` for v0.2.1)
+- [x] Wire v0.3.0 labeler into a backfill script (`scripts/backfill_labels_v030.py`); horizon encoded in labeler_version suffix (`0.3.0#h24`/`h48`/`h168`) to preserve composite PK without schema change; v0.3.0-specific fields (sigma_20d, upper_barrier, lower_barrier, barrier_hit_price) stored in features JSONB
+- [ ] Run v0.3.0 backfill against production corpus (9 sold-out events: 8 Bitget + 1 Binance; expect ~27 label rows)
 - [ ] Extend `scripts/gate_report.py` for multi-hypothesis + Holm-Bonferroni correction
 - [x] `KILL_COUNTER.md` — running ledger (done in Phase 3b)
 - [x] Git-tag each pre-registration at commit; upload to OSF (done in Phase 3b — commit 385e5a6)
@@ -140,4 +141,5 @@ Weekly self-check: run through the adjustment triggers list above. If any is tri
 | 2026-07-28 | Phase 3c iter 2 | Standalone binance_scrape orchestrator with diff-based sold-out detection; Migration 009 revised to composite PK + widened FKs; 225/225 tests. Blocker: user greenlight to apply Migration 009 to Supabase before wiring Binance into the live write path. |
 | 2026-07-28 | Phase 3c → 3d pivot | Phase 3c parked on Supabase-migration blocker; opened Phase 3d with sigma_20d realized-vol utility (compute_sigma_realized + resample_to_daily in candles.py). 233/233 tests. |
 | 2026-07-28 | Phase 3c LIVE | Migration 009 applied to Supabase (composite PK); SupabaseWriter updated; live Binance scrape landed 422 rows to production alongside 455 Bitget. Added Binance step to `.github/workflows/scrape.yml` — Binance now fires on the same hourly cron as Bitget. |
-| 2026-07-28 | Phase 3d labeler | v0.3.0 triple-barrier labeler shipped as `defi_investor.labelers.triple_barrier_v030`. Multiplicative barriers on sigma_20d per A2b spec, multi-horizon returns, 9 offline tests. 242/242 total. Next: backfill wiring + gate_report multi-hypothesis. |
+| 2026-07-28 | Phase 3d labeler | v0.3.0 triple-barrier labeler shipped as `defi_investor.labelers.triple_barrier_v030`. Multiplicative barriers on sigma_20d per A2b spec, multi-horizon returns, 9 offline tests. 242/242 total. |
+| 2026-07-28 | Phase 3d backfill | `scripts/backfill_labels_v030.py` written; iterates sold-out events across both venues, writes 3 rows per event (one per horizon) using labeler_version suffix trick to keep composite PK intact; production has 9 sold-out events pending. Not yet run against production. |
