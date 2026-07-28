@@ -107,9 +107,10 @@ The A3 hypothesis. Different signal channel. Different runtime model.
 - [x] Migration 010 drafted (`orderbook_snapshots_l2`, `orderbook_features`, `orderbook_universe`) — retention TTL via pg_cron noted; NOT auto-installed
 - [x] `L2Snapshot` promoted to `orderbook/__init__.py` — shared shape across venues
 - [x] Binance spot L2 WS client (`src/defi_investor/orderbook/binance_l2.py`) — combined-stream `<symbol>@depth5@100ms`, live-verified ~10 snapshots/sec BTCUSDT, same runtime shape as Bitget (drop-in interchangeable)
-- [ ] Storage: async batched inserts to Supabase, backpressure-aware
+- [x] Storage: `BatchedL2Writer` (`src/defi_investor/orderbook/storage.py`) — async queue, 500-row batches or 2s interval, drop-oldest backpressure at 100k queue depth, error-resilient (single flush failure logged and reported, loop continues), sync Supabase upsert wrapped in `asyncio.to_thread`. 7 tests: batch/time flush, drop-oldest, error resilience, final drain on stop, row shape.
 - [ ] Apply Migration 010 to Supabase (**user greenlight; wait until we're ready to store data**)
 - [ ] Universe manager (daily refresh of tracked coins from `earn_events`)
+- [ ] L2 capture daemon (glue: universe → WS clients → BatchedL2Writer → Supabase)
 - [ ] A3 backfill (parallel to backfill_labels_v030 for A2b)
 - [ ] A3 gate report (t-test per A3 spec, sibling to gate_report_a2b)
 - [ ] Retention policy (nightly TTL prune of raw snapshots)
@@ -160,3 +161,4 @@ Weekly self-check: run through the adjustment triggers list above. If any is tri
 | 2026-07-28 | Phase 3e prototype | Bitget spot L2 WS client verified live (~10 snapshots/sec). Design doc `docs/ORDERBOOK_DESIGN.md` covers deploy options, storage volume, universe scoping, feature spec. Blocked on user decision for deploy target (local vs cloud). |
 | 2026-07-28 | Phase 3e feature+schema | `compute_depth_asymmetry_5min` shipped as pure function over L2 snapshot iterables (12 tests). Migration 010 drafted (`orderbook_snapshots_l2`, `orderbook_features`, `orderbook_universe`). 264/264. |
 | 2026-07-28 | Phase 3e Binance client | Binance spot L2 WS client live-verified. L2Snapshot promoted to shared shape. Both venues drop-in interchangeable — feature extractor works over either. 264/264. |
+| 2026-07-28 | Phase 3e storage layer | BatchedL2Writer shipped (async queue + 500-row/2s batching + drop-oldest backpressure). 271/271 tests. Ready to wire into a daemon. |
