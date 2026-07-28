@@ -105,7 +105,8 @@ The A3 hypothesis. Different signal channel. Different runtime model.
 - [x] `websockets>=13.0` added to pyproject dependencies
 - [x] Feature extractor (`src/defi_investor/orderbook/features.py::compute_depth_asymmetry_5min`) per A3 spec: pre + pre_pre 5-min windows, log-ratio asymmetry, ws_gap_max_s + coverage_pre exclusion signals. 12 tests covering symmetric/ask-contract/bid-contract/short-book/zero-depth/coverage. 264/264 total.
 - [x] Migration 010 drafted (`orderbook_snapshots_l2`, `orderbook_features`, `orderbook_universe`) — retention TTL via pg_cron noted; NOT auto-installed
-- [ ] Binance spot L2 WS client (mirror of Bitget shape)
+- [x] `L2Snapshot` promoted to `orderbook/__init__.py` — shared shape across venues
+- [x] Binance spot L2 WS client (`src/defi_investor/orderbook/binance_l2.py`) — combined-stream `<symbol>@depth5@100ms`, live-verified ~10 snapshots/sec BTCUSDT, same runtime shape as Bitget (drop-in interchangeable)
 - [ ] Storage: async batched inserts to Supabase, backpressure-aware
 - [ ] Apply Migration 010 to Supabase (**user greenlight; wait until we're ready to store data**)
 - [ ] Universe manager (daily refresh of tracked coins from `earn_events`)
@@ -158,3 +159,4 @@ Weekly self-check: run through the adjustment triggers list above. If any is tri
 | 2026-07-28 | Phase 3d gate | Holm-Bonferroni helper + A2b gate report shipped. `family_wise.N_REGISTERED=3` tracks KILL_COUNTER.md. A2b gate uses binomial test per horizon. 252/252 tests. Report runs today (descriptive until labels exist). |
 | 2026-07-28 | Phase 3e prototype | Bitget spot L2 WS client verified live (~10 snapshots/sec). Design doc `docs/ORDERBOOK_DESIGN.md` covers deploy options, storage volume, universe scoping, feature spec. Blocked on user decision for deploy target (local vs cloud). |
 | 2026-07-28 | Phase 3e feature+schema | `compute_depth_asymmetry_5min` shipped as pure function over L2 snapshot iterables (12 tests). Migration 010 drafted (`orderbook_snapshots_l2`, `orderbook_features`, `orderbook_universe`). 264/264. |
+| 2026-07-28 | Phase 3e Binance client | Binance spot L2 WS client live-verified. L2Snapshot promoted to shared shape. Both venues drop-in interchangeable — feature extractor works over either. 264/264. |

@@ -27,15 +27,17 @@ import asyncio
 import json
 import logging
 import signal
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Iterable, Optional
 
 import websockets
 from websockets.asyncio.client import ClientConnection as WebSocketClientProtocol
 
+from . import L2Snapshot
+
 
 LOG = logging.getLogger("defi_investor.orderbook.bitget_l2")
+VENUE = "bitget"
 
 BITGET_PUBLIC_WS = "wss://ws.bitget.com/v2/ws/public"
 
@@ -46,16 +48,6 @@ PING_INTERVAL_S = 25.0
 # Reconnect backoff: exponential from 1s to 60s cap.
 RECONNECT_MIN_S = 1.0
 RECONNECT_MAX_S = 60.0
-
-
-@dataclass
-class L2Snapshot:
-    """One top-5 snapshot from Bitget spot books5 channel."""
-    received_at: str            # ISO 8601 UTC, wall-clock at receive
-    exchange_ts_ms: int         # Bitget's server-side timestamp (ms epoch)
-    inst_id: str                # e.g. BTCUSDT
-    bids: list[tuple[float, float]]   # [(price, size), ...] top-5
-    asks: list[tuple[float, float]]   # [(price, size), ...] top-5
 
 
 def _parse_books5_payload(msg: dict) -> Iterable[L2Snapshot]:
@@ -79,9 +71,10 @@ def _parse_books5_payload(msg: dict) -> Iterable[L2Snapshot]:
             LOG.warning("books5 row parse failed for %s: %s", inst_id, e)
             continue
         yield L2Snapshot(
+            venue=VENUE,
+            inst_id=inst_id,
             received_at=received_at,
             exchange_ts_ms=ts,
-            inst_id=inst_id,
             bids=bids,
             asks=asks,
         )
