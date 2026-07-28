@@ -237,16 +237,26 @@ def snapshot_universe(
     client: Optional[httpx.Client] = None,
     max_coins: int = _MAX_COINS_PER_RUN,
     inter_call_sleep_s: float = _INTER_CALL_SLEEP_S,
+    prior_last_seen: Optional[dict[str, str]] = None,
 ) -> list[NextUnlockSnapshot]:
     """Snapshot next-unlock for every distinct coin in the universe.
 
     Slower per call than OI (tokenomist is HTML, ~600 KB per page vs
-    Bitget's ~150 bytes of JSON). Called from the scraper only on the
-    hourly-aligned run to keep the /15 cron under its 5-minute budget.
+    Bitget's ~150 bytes of JSON). Called from the scraper on the
+    hourly-aligned run.
+
+    `prior_last_seen` (optional): mapping `coin_name (upper) -> ISO snapped_at
+    of most recent successful snapshot`. When provided, coins are ordered
+    NEVER-SEEN first, then OLDEST-SEEN first. Rotation lets the run cap
+    (`max_coins`) cover the full universe over successive scrapes rather
+    than repeatedly sampling the alphabetically-first N. Without this
+    prioritization the confound was systemically 0% populated for coins
+    past rank `max_coins` in the sort order (surfaced 2026-07-28: 5 of 8
+    sold-out coins had rank > 300 and never got a snapshot).
     """
     ts = snapped_at or _now_iso()
     seen: set[str] = set()
-    ordered: list[str] = []
+    unique: list[str] = []
     for c in coin_names:
         if not c:
             continue
@@ -254,11 +264,26 @@ def snapshot_universe(
         if u in seen:
             continue
         seen.add(u)
-        ordered.append(u)
+        unique.append(u)
+
+    # Ordering: never-seen first (last_seen==""), then oldest-seen first.
+    # Falls back to alphabetical when no prior_last_seen provided.
+    if prior_last_seen is not None:
+        def _sort_key(coin: str) -> tuple[str, str]:
+            last = prior_last_seen.get(coin, "")
+            # Empty string sorts before any real ISO timestamp
+            return (last, coin)
+        ordered = sorted(unique, key=_sort_key)
+    else:
+        ordered = unique
 
     if len(ordered) > max_coins:
-        LOG.warning("vest snapshot_universe: %d coins exceeds cap %d; truncating",
-                    len(ordered), max_coins)
+        LOG.info(
+            "vest snapshot_universe: %d coins; capping at %d "
+            "(rotation by staleness: prior_last_seen %s)",
+            len(ordered), max_coins,
+            "provided" if prior_last_seen is not None else "not provided",
+        )
         ordered = ordered[:max_coins]
 
     close_after = client is None

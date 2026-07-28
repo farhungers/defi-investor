@@ -81,3 +81,26 @@ Same fix mirrored in the integration test's local helper. Docstring on the fixed
 **Broader lesson.** Sign-convention bugs in pre-registered hypotheses are especially dangerous because the wrong sign LOOKS RIGHT to statistical machinery — the gate would fire on the same-magnitude but wrong-direction effect. Integration tests that thread synthetic data through the whole pipeline are cheap insurance against this class of bug.
 
 **Roadmap implication.** Add sign-convention integration tests as a checklist item for any future hypothesis whose label semantics involve a directional feature. Not urgent — currently only A3 has this structure.
+
+## 2026-07-28 — vest-unlock coverage bug root-caused and fixed (Kepler)
+
+**Setup.** OBSERVATIONS entry earlier today flagged `known_vest_unlock_within_3d` as 0/37 populated. Diagnosed today.
+
+**Two bugs, one silent failure mode.**
+
+1. **Alphabetical truncation.** `vest_snapshot_universe` had a hard cap `_MAX_COINS_PER_RUN = 300` and processed coins in whatever order the caller passed them. `scraper.py` passed `sorted({...})` — pure alphabetical. Universe grew to 541 coins, so 241 coins beyond rank 300 (letter 'M' onward, roughly) were NEVER snapshotted. Five of eight sold-out coins (ONDO, PREOPAI, SKYAI, SNEK, W) were in that dead zone.
+
+2. **Job timeout.** In production the full pipeline (Bitget scrape + Binance scrape + OI snapshot for 877 combined-catalog coins + vest snapshot for 300 coins + listings) exceeds the 5-minute GH Actions job timeout. Many runs cancel around 5m30s. When cancellation hits inside the vest step, its writes are lost silently.
+
+3. **Combined effect.** `earn_next_unlocks` was empty in production — zero rows across all statuses — before today. Even the alphabetically-early coins that would have been in the 300-cap weren't getting snapshotted because the job was cancelling before the vest step completed.
+
+**Fixes.**
+- `vest_snapshot_universe` gained a `prior_last_seen` optional kwarg. When provided, coins are ordered NEVER-SEEN first, then OLDEST-SEEN first. Rotation gives full universe coverage over successive runs even under the cap. 3 new tests.
+- `scraper.py` looks up `earn_next_unlocks` and constructs `prior_last_seen` before each run.
+- One-shot manual population: ran `snapshot_universe` locally for the 8 sold-out coins. 7 rows written, 2 of which have real next-unlock dates (ONDO 2027-01-18, W 2026-08-07).
+
+**Not fixed in this iteration:**
+- The 5-minute job-timeout root cause (too many steps in one job). Actually a bigger problem — even with rotation, if the vest step doesn't complete in the budget, no writes land. Follow-up: consider splitting vest to its own workflow file with its own external cron trigger. Requires user to add a second cron-job.org entry. Deferred.
+- Existing v0.2.1 label rows won't retrospectively get `known_vest_unlock_within_3d` populated. Would need a manual UPDATE against Supabase, but with only 1 resolved label in the batch this doesn't materially move the gate.
+
+**Systematic lesson.** Confound-instrumentation bugs are silent by nature: `NULL` on a confound column just means "not evaluated." Whenever we add a confound to the labeler, we should also add a coverage-monitoring assertion (e.g. "at least X% of resolved primary labels have this confound populated") so a broken data-collection pipeline shows up loudly.

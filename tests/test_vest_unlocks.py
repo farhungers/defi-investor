@@ -203,3 +203,67 @@ def test_snapshot_universe_honors_max_coins_cap():
             max_coins=3,
         )
     assert len(snaps) == 3
+
+
+def test_snapshot_universe_prioritizes_never_seen_when_prior_provided():
+    """Never-snapshotted coins go first when prior_last_seen is given."""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, text=UNDEFINED_DESC_HTML)
+
+    # 5 candidates. A/B were snapped recently; C/D/E have never been snapped.
+    # With max_coins=3 and prior_last_seen, expect the three never-seen coins first.
+    with _mock_client(handler) as client:
+        snaps = snapshot_universe(
+            ["A", "B", "C", "D", "E"],
+            client=client, inter_call_sleep_s=0,
+            max_coins=3,
+            prior_last_seen={
+                "A": "2026-07-28T12:00:00+00:00",
+                "B": "2026-07-28T11:00:00+00:00",
+            },
+        )
+    # Should include C, D, E (never-seen come first, then oldest — but here no
+    # older-than-A/B needed since we only take 3 and never-seen are 3).
+    got_coins = sorted(s.coin_name for s in snaps)
+    assert got_coins == ["C", "D", "E"]
+
+
+def test_snapshot_universe_prioritizes_oldest_when_all_have_prior():
+    """When every coin has a prior snapshot, oldest first."""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, text=UNDEFINED_DESC_HTML)
+
+    with _mock_client(handler) as client:
+        snaps = snapshot_universe(
+            ["FRESH", "OLD", "MEDIUM"],
+            client=client, inter_call_sleep_s=0,
+            max_coins=2,
+            prior_last_seen={
+                "FRESH":  "2026-07-28T12:00:00+00:00",
+                "MEDIUM": "2026-07-28T06:00:00+00:00",
+                "OLD":    "2026-07-27T00:00:00+00:00",
+            },
+        )
+    got_coins = sorted(s.coin_name for s in snaps)
+    assert got_coins == ["MEDIUM", "OLD"]
+
+
+def test_snapshot_universe_alphabetical_when_no_prior_provided():
+    """Backward compat: without prior_last_seen, order matches input order."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=UNDEFINED_DESC_HTML)
+
+    with _mock_client(handler) as client:
+        snaps = snapshot_universe(
+            ["ZULU", "ALPHA", "MIKE"],
+            client=client, inter_call_sleep_s=0,
+            max_coins=2,
+        )
+    # No prior => input-order-first (ZULU, ALPHA in this case; MIKE truncated)
+    assert [s.coin_name for s in snaps] == ["ZULU", "ALPHA"]

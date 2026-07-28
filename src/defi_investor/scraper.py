@@ -361,7 +361,31 @@ def run_scrape(
     if now.minute < 15:  # first cron in every hour
         vest_ran = True
         try:
-            v_snaps = vest_snapshot_universe(distinct_coins, snapped_at=scraped_at)
+            # Prioritize by staleness: never-seen coins first, then
+            # oldest-snapshotted first. Fixes the alphabetical-truncation
+            # bias documented in docs/OBSERVATIONS.md 2026-07-28.
+            prior_last_seen: dict[str, str] = {}
+            sb_for_lookup = getattr(writer, "_client", None)
+            if sb_for_lookup is not None:
+                try:
+                    r = (
+                        sb_for_lookup
+                        .table("earn_next_unlocks")
+                        .select("coin_name,snapped_at")
+                        .execute()
+                    )
+                    for row in r.data or []:
+                        coin = (row.get("coin_name") or "").upper()
+                        ts = row.get("snapped_at") or ""
+                        prior = prior_last_seen.get(coin, "")
+                        if ts > prior:
+                            prior_last_seen[coin] = ts
+                except Exception as e:  # noqa: BLE001
+                    LOG.warning("vest last-seen lookup failed; alphabetical fallback: %s", e)
+            v_snaps = vest_snapshot_universe(
+                distinct_coins, snapped_at=scraped_at,
+                prior_last_seen=prior_last_seen or None,
+            )
             n_vest = len(v_snaps)
             n_vest_tracked = sum(1 for s in v_snaps if s.status == "tracked_with_unlock")
             if v_snaps:
