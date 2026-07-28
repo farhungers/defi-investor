@@ -58,12 +58,13 @@ Corpus doubler. First real implementation of Decision 1 (multi-venue) + Decision
 - [x] Binance Simple Earn parser (`src/defi_investor/parsers/binance_earn.py`, 12 unit tests)
 - [x] Binance fetch layer with pagination (`src/defi_investor/binance_earn_fetch.py`)
 - [x] Dry-run CLI (`scripts/binance_earn_dryrun.py`) — verified: 421/421 products parsed, APY 0-53%, 14 above alert threshold
-- [x] Extend `earn_events` schema to hold `venue` field (Migration 009 drafted; not yet applied to Supabase)
+- [x] Extend `earn_events` schema to hold `venue` field (Migration 009 drafted with composite PK + widened FKs; not yet applied to Supabase)
 - [x] Add `venue` field to `EarnEvent` dataclass (default `'bitget'`, backward-compat)
+- [x] Standalone Binance scrape orchestrator (`src/defi_investor/binance_scrape.py`) with disappearance-detection (diff-based sold-out) — 5 unit tests, live end-to-end verified (421 fetch → JSONL → second scrape correctly shows 0 new / 421 updated)
 - [ ] Cross-venue coin mapping table (`venue_coin_map`) — schema drafted in Migration 009; seeding deferred
-- [ ] Wire Binance fetch into main scraper.py (multi-venue merge, venue-scoped upserts)
-- [ ] Extend db.py Writer for `(venue, product_id)` composite key upserts
-- [ ] Apply Migration 009 to Supabase
+- [ ] Wire Binance fetch into main scraper.py orchestration (currently binance_scrape is standalone; unification post-migration)
+- [ ] Update `SupabaseWriter.upsert_events` on_conflict to `venue,product_id` (coordinated cutover with Migration 009 apply — one-line diff prepared in migration doc)
+- [ ] Apply Migration 009 to Supabase (**user greenlight required — see below**)
 - [ ] Deploy Binance scraper to external cron (adds a second cron-job.org entry OR extends existing scrape to fetch both venues in one run — TBD, latter is cheaper)
 - [ ] Cross-venue anchor-timing test (Decision 5's timing test — Second Law-safe)
 - [ ] Coverage forecast model (updated with real Binance intake)
@@ -134,3 +135,4 @@ Weekly self-check: run through the adjustment triggers list above. If any is tri
 |---|---|---|
 | 2026-07-28 | v2.0 initial draft | Decisions 1-6 locked in Session 3 |
 | 2026-07-28 | Phase 3c mid-progress | Binance parser + fetch + dry-run shipped; 3 empirical adjustments logged in Phase 3c section (sold-out semantics, APY unit, catalog size) |
+| 2026-07-28 | Phase 3c iter 2 | Standalone binance_scrape orchestrator with diff-based sold-out detection; Migration 009 revised to composite PK + widened FKs; 225/225 tests. Blocker: user greenlight to apply Migration 009 to Supabase before wiring Binance into the live write path. |
