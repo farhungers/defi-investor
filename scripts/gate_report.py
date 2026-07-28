@@ -208,7 +208,7 @@ def main() -> int:
     try:
         anchor_ts_list = [pd.to_datetime(r["anchor_ts"]) for r in primary
                           if r.get("anchor_ts")]
-        if anchor_ts_list:
+        if len(anchor_ts_list) >= 2:
             t_min = min(anchor_ts_list).isoformat()
             t_max = max(anchor_ts_list).isoformat()
             listings_r = (
@@ -219,9 +219,6 @@ def main() -> int:
                 .execute()
             )
             listings_rows = listings_r.data or []
-            earn_coins = {row["coin_name"] for row in raw if row.get("features", {})}
-            # Fall back to a direct earn_events pull for coins seen in labels;
-            # the label rows do not carry coin_name at the top level.
             evs = (
                 sb.table("earn_events")
                 .select("coin_name")
@@ -240,6 +237,13 @@ def main() -> int:
                 f"  With Earn program (excluded):   {len(listings_rows) - len(control_only)}",
                 f"  Control-arm cohort size:        {len(control_only)}",
                 "  DiD analysis (control R vs Earn R): deferred to Phase 3",
+            ]
+        else:
+            lines += [
+                "-" * 70,
+                "Control cohort (METHOD §1.4 — descriptive)",
+                f"  Skipped: primary universe too small "
+                f"(n={len(anchor_ts_list)}, need >= 2 for a real time window)",
             ]
     except Exception as e:  # noqa: BLE001
         LOG.warning("control-cohort section failed: %s", e)

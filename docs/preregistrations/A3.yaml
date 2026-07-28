@@ -1,0 +1,50 @@
+hypothesis_id: A3
+name: "Order-book depth impact around Earn sold-out events predicts short-horizon return"
+frame_id: FRAME_C1
+version: 1
+
+registered_date: 2026-07-28
+registered_by: Vault
+registration_note: "Pre-registered; scraper and labeler both to be built."
+git_commit_hash: null
+git_tag: null
+osf_id: null
+supersedes: null
+
+event_class: "earn_sold_out"
+event_source_venues: ["bitget", "binance"]
+tradable_venue: "bitget"
+
+labeler_id: "A3_v0.1.0"
+labeler_type: "order_book_impact"
+labeler_config:
+  anchor: "sold_out_first_seen_at"
+  data_source_primary: "bitget_l2_ws"
+  data_source_crossval: "binance_l2_ws"
+  depth_levels: 5                    # top-of-book 5 levels each side
+  pre_event_window_minutes: 5
+  response_horizon_hours: 24
+  theta_asym: 0.5                    # pre-committed asymmetry threshold
+  label_encoding:
+    ask_contraction: 1
+    no_asymmetry: 0
+    bid_contraction: -1
+  exclusions:
+    - "no_orderbook_data"
+    - "ws_gap_over_60s_in_pre_window"
+    - "within_7d_of_TGE"
+
+gate:
+  min_labeled_n: 30
+  mean_r_asymmetry_positive: true    # E[R|+1] > E[R|-1]
+  ttest_p_gate: 0.05                 # apply family-wise correction on top
+  coverage_min: 0.70                 # of primary events
+
+correction_method: "holm_bonferroni"
+kill_counter_position: 4
+
+decision_date: "2026-11-30"
+
+red_team_section: "HYPOTHESIS_A3.md#red-team"
+
+status: draft

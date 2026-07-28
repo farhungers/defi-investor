@@ -1,0 +1,46 @@
+hypothesis_id: A2a
+name: "Bitget+Binance Earn sold-out predicts short-horizon return (fixed-horizon)"
+frame_id: FRAME_C1
+version: 1
+
+registered_date: 2026-07-28
+registered_by: Vault
+registration_note: "Retroactive: labeler v0.2.1 already running since Phase 2. Prior labels count."
+git_commit_hash: null            # populated at commit
+git_tag: null                    # populated at tag time
+osf_id: null                     # populated after OSF upload
+supersedes: null
+
+event_class: "earn_sold_out"
+event_source_venues: ["bitget", "binance"]
+tradable_venue: "bitget"
+
+labeler_id: "v0.2.1"
+labeler_type: "fixed_horizon"
+labeler_config:
+  horizons_hours: [24, 48, 168]
+  anchor: "sold_out_first_seen_at"
+  price_source: "bitget_kline_1m"
+  return_metric: "log_return"
+  exclusions:
+    - "stale_anchor"
+    - "horizon_not_yet_resolved"
+    - "no_candles_available"
+    - "within_7d_of_TGE"
+
+gate:
+  min_primary_n: 30
+  mean_r_positive: true
+  psr_effective_gate: 0.95
+  hhi_winners_max: 0.15
+  median_over_mean_min: 0.5
+  confound_split_hits_required: 2
+
+correction_method: "holm_bonferroni"
+kill_counter_position: 1
+
+decision_date: "2026-09-30"
+
+red_team_section: "HYPOTHESIS_A2a.md#red-team"
+
+status: draft

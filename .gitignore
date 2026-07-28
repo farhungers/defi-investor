@@ -11,6 +11,7 @@ data/raw/*
 
 # Reference books (copyrighted PDFs, local research only, never push)
 resaerchBOOKS/
+reaserch/
 
 # Derived catalog is optional to commit; keep local by default
 data/events/*.jsonl

@@ -22,7 +22,17 @@ NEXT_DATA_RE = re.compile(
 
 # Product families we know how to emit events for.
 # Trend and SharkFin have different structure and are deferred to Phase 2.
-LIST_DATA_BIZLINES = {"Savings", "PosStaking", "CashPlus", "FundMarket"}
+# OnChainElite added 2026-07-28 after a BGBTC record surfaced from hotData with
+# this biz_line. Record shape parses cleanly (single APY, empty tiers, no cap),
+# so accepted as first-class. If future OnChainElite records prove structurally
+# different, revisit and consider a separate parser path.
+LIST_DATA_BIZLINES = {
+    "Savings",
+    "PosStaking",
+    "CashPlus",
+    "FundMarket",
+    "OnChainElite",
+}
 
 
 class ParseError(Exception):

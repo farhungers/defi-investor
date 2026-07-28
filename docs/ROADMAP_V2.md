@@ -1,0 +1,122 @@
+# Roadmap V2 — dynamic, adjustment-triggered
+
+Successor to `docs/ROADMAP.md` (Phase 1 era). Reflects Decisions 1-6 locked in Session 3 (2026-07-28).
+
+## Locked decisions (source of truth)
+
+| # | Decision | Result |
+|---|---|---|
+| 1 | Signal-detection universe vs trading universe | Multi-venue detection, Bitget-tradable filter, Bitget-chart labels. Events from any venue count (Interpretation A). |
+| 2 | Venue/product/source scope | C+D+E catalog, free-tier only, minus D5 (X/Twitter unreliable), minus paid tiers (Nansen, CryptoRank API). |
+| 3 | Research frame | C1 (informed-positioning detection on CEX) as the frame; A2 (Bitget+Binance Earn) as the first implementation. Gate call pre-committed to trigger reframing either direction. |
+| 4 | Pre-registration structure | E2 + D1 + D2 + D3: two-layer (frame + hypothesis) Markdown docs + machine-readable YAML + git-tagged + OSF public timestamp + mandatory red-team section + kill-counter ledger for family-wise correction. |
+| 5 | Labeler architecture | A2a (v0.2.1 fixed) + A2b (v0.3.0 triple-barrier) now; A2c (v0.4.0 CAR) pre-committed post-gate; A3 (order-book impact) as separate pre-registered hypothesis; D1 meta-labeling as post-gate filter. Multi-timeframe is CV search space per hypothesis, not separate hypotheses. |
+| 6 | Build sequencing | Library-first anchor, then E1→E2→E3→E4 with dynamic revision. |
+
+## Phases
+
+### Phase 3a — Library-first anchor (~1 week) — COMPLETE
+The knowledge scaffold that every subsequent phase depends on. User priority: this first.
+
+- [x] `docs/library/README.md` — system explainer
+- [x] `docs/library/MOC.md` — map of content (updated with all 37 LIB entries)
+- [x] `LIB_0001` through `LIB_0037` — full stub set for corpus in `reaserch/`
+- [x] Identify unlabeled PDFs — all 5 identified (Chen Kelly, Narang Black Box, Mitchell Architecture review, Zhang Funding Rate, Flint order placement)
+- [x] `verne-castaways-of-the-flag.pdf` flagged as stray in MOC (confirm with user)
+- [x] `docs/preregistrations/FRAME_C1.md` — the broad C1 research frame
+- [x] `docs/preregistrations/README.md` — registration protocol
+- [x] `docs/preregistrations/YAML_SCHEMA.md` — machine-readable spec schema
+- [x] `docs/preregistrations/KILL_COUNTER.md` — family-wise correction ledger
+- [x] `docs/preregistrations/REGISTRY.md` — index
+- [ ] **Awaiting**: Campbell/Lo/MacKinlay Ch 4 PDF from user
+
+**Adjustment trigger status**: FRAME_C1.md drafting surfaced no contradictions with Decision 3. Frame reads consistently. Proceeding.
+
+### Phase 3b — Ops foundation (~1 week, can overlap with Phase 3a tail)
+Kill the corpus-arrival bottleneck. Fix bugs. Get the pre-registration infrastructure minimal.
+
+- [x] `docs/preregistrations/` directory scaffold + YAML schema + git-tag convention
+- [x] Control-arm bug fix in `scripts/gate_report.py` — killed the dead-code `earn_coins` KeyError and added n<2 guard; verified with live run
+- [x] BGBTC parser drift fix — added `OnChainElite` to `LIST_DATA_BIZLINES`; 208/208 tests pass; next scrape will reclassify the existing row as `complete`
+- [x] Draft HYPOTHESIS_A2a.md + A2a.yaml (retroactive registration of v0.2.1)
+- [x] Draft HYPOTHESIS_A2b.md + A2b.yaml (pre-registration for v0.3.0)
+- [x] Draft HYPOTHESIS_A3.md + A3.yaml (pre-registration for order-book impact)
+- [ ] External cron → workflow_dispatch (needs cron-job.org account + PAT; **user action required**)
+- [ ] OSF integration (needs OSF token; **user action required**)
+- [ ] `scripts/validate_prereg.py` — YAML validator (deferred; useful once we start committing hypothesis versions)
+
+**Adjustment trigger**: if cron-job.org rate limits us, evaluate GitHub Actions self-hosted runner as backup.
+
+**Blocked-by-user items**:
+1. cron-job.org account + fine-grained PAT (`workflow_dispatch` scope only)
+2. OSF account + API token
+
+### Phase 3c — Binance data sprint (~2 weeks)
+Corpus doubler. First real implementation of Decision 1 (multi-venue) + Decision 2 (Binance-first).
+
+- [ ] Binance Simple Earn scraper (mirror of Bitget structure)
+- [ ] Cross-venue coin mapping table (`bitget_binance_coin_map`)
+- [ ] Extend `earn_events` schema to hold `venue` field
+- [ ] Deploy Binance scraper to external cron
+- [ ] Cross-venue anchor-timing test (Decision 5's timing test — Second Law-safe)
+- [ ] Coverage forecast model (updated with real Binance intake)
+
+**Adjustment trigger 1**: if Binance intake doesn't at least 1.5× current Bitget-only rate within 4 weeks of deploy, invoke Decision 2 A3 kill-switch (stop expanding venues, reconsider hypothesis).
+
+**Adjustment trigger 2**: if cross-venue anchor-timing shows Binance sold_out consistently precedes Bitget sold_out by more than a threshold (TBD in FRAME_C1.md), rethink whether v0.3.0 should anchor on Binance instead of Bitget.
+
+### Phase 3d — Labeler + pre-registration lockdown (~2 weeks)
+The pre-registered infrastructure that gates depend on.
+
+- [ ] `HYPOTHESIS_A2a.md` + `A2a.yaml` — v0.2.1 fixed-horizon, formal pre-reg
+- [ ] `HYPOTHESIS_A2b.md` + `A2b.yaml` — v0.3.0 triple-barrier, formal pre-reg
+- [ ] Build `src/defi_investor/labelers/triple_barrier.py` — labeler v0.3.0
+- [ ] Extend `scripts/gate_report.py` for multi-hypothesis + Holm-Bonferroni correction
+- [ ] `KILL_COUNTER.md` — running ledger; auto-updated by gate report
+- [ ] Git-tag each pre-registration at commit; upload to OSF
+
+**Adjustment trigger**: if triple-barrier produces wildly different labels than fixed-horizon on same events, don't touch either — investigate whether it's a labeler bug vs a legitimate methodological difference (deep-read AFML Ch 3 if needed).
+
+### Phase 3e — Order-book channel (~2-3 weeks, parallel with Phase 3d if capacity allows)
+The A3 hypothesis. Different signal channel. Only start if Phase 3d isn't at risk.
+
+- [ ] `HYPOTHESIS_A3.md` + `A3.yaml` — order-book impact hypothesis
+- [ ] L2 order-book scraper (Bitget + Binance WS free streams)
+- [ ] Storage layer for order-book snapshots (may need new table; consider retention TTL)
+- [ ] Order-book impact labeler
+- [ ] Extend gate report to accommodate A3 with its own kill-counter slot
+
+**Adjustment trigger**: if free WS streams drop connections frequently or require paid tier for reliability, defer A3 entirely and requeue for a Phase 4.
+
+### Phase 3f — Gate call (2026-09-30 or n≥30 primary on any hypothesis, whichever first)
+The pre-committed decision date. No iteration allowed between now and this date.
+
+- [ ] Run gate on A2a, A2b (and A3 if ready), with kill-counter-driven correction
+- [ ] Publish result to `KILL_COUNTER.md`
+- [ ] Trigger Decision 3 pre-committed reframe:
+  - **Pass** → widen scope for OOS replication + build A2c CAR
+  - **Fail** → widen frame to test meta-question ("does *any* CEX product-surface signal exist?")
+
+**Adjustment trigger**: this phase IS the trigger for the largest scope revision. Update this roadmap after the gate call.
+
+## Cross-cutting norms
+
+### JIT reading
+Skim titles/abstracts of all corpus (already done via MOC.md queuing). Deep-read only what a specific decision or implementation requires. Level up LIB status as engagement happens.
+
+### Observation log
+Everything surprising gets recorded to `docs/OBSERVATIONS.md` (to be created on first observation). This is the input to roadmap revision.
+
+### Roadmap revision cadence
+Weekly self-check: run through the adjustment triggers list above. If any is tripped, edit this file, git-commit the revision, note the reason in the commit message.
+
+### Discipline invariants (non-negotiable)
+- No feature/labeler iteration after seeing any label's return.
+- All parallel hypotheses pre-registered before code writes labels.
+- Track 2 candidates (meme cohort splits, time-of-day, fractional differentiation) stay queued.
+- Second Law binds: preliminary results do not drive design changes on the current experiment.
+
+## Revision log
+| Date | Revision | Reason |
+|---|---|---|
+| 2026-07-28 | v2.0 initial draft | Decisions 1-6 locked in Session 3 |
