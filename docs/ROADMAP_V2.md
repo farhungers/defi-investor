@@ -51,23 +51,23 @@ Kill the corpus-arrival bottleneck. Fix bugs. Get the pre-registration infrastru
 1. cron-job.org account + fine-grained PAT (`workflow_dispatch` scope only)
 2. OSF account + API token
 
-### Phase 3c — Binance data sprint (~2 weeks) — IN PROGRESS
+### Phase 3c — Binance data sprint (~2 weeks) — LIVE
 Corpus doubler. First real implementation of Decision 1 (multi-venue) + Decision 2 (Binance-first).
 
 - [x] Reverse-engineer Binance public Simple Earn endpoint (no auth needed; `GET /bapi/earn/v1/friendly/finance-earn/simple-earn/homepage/details`)
 - [x] Binance Simple Earn parser (`src/defi_investor/parsers/binance_earn.py`, 12 unit tests)
 - [x] Binance fetch layer with pagination (`src/defi_investor/binance_earn_fetch.py`)
 - [x] Dry-run CLI (`scripts/binance_earn_dryrun.py`) — verified: 421/421 products parsed, APY 0-53%, 14 above alert threshold
-- [x] Extend `earn_events` schema to hold `venue` field (Migration 009 drafted with composite PK + widened FKs; not yet applied to Supabase)
+- [x] Migration 009 applied to Supabase (composite PK on `(venue, product_id)` + widened FKs; 455 existing Bitget rows auto-tagged venue='bitget')
 - [x] Add `venue` field to `EarnEvent` dataclass (default `'bitget'`, backward-compat)
-- [x] Standalone Binance scrape orchestrator (`src/defi_investor/binance_scrape.py`) with disappearance-detection (diff-based sold-out) — 5 unit tests, live end-to-end verified (421 fetch → JSONL → second scrape correctly shows 0 new / 421 updated)
-- [ ] Cross-venue coin mapping table (`venue_coin_map`) — schema drafted in Migration 009; seeding deferred
-- [ ] Wire Binance fetch into main scraper.py orchestration (currently binance_scrape is standalone; unification post-migration)
-- [ ] Update `SupabaseWriter.upsert_events` on_conflict to `venue,product_id` (coordinated cutover with Migration 009 apply — one-line diff prepared in migration doc)
-- [ ] Apply Migration 009 to Supabase (**user greenlight required — see below**)
-- [ ] Deploy Binance scraper to external cron (adds a second cron-job.org entry OR extends existing scrape to fetch both venues in one run — TBD, latter is cheaper)
-- [ ] Cross-venue anchor-timing test (Decision 5's timing test — Second Law-safe)
-- [ ] Coverage forecast model (updated with real Binance intake)
+- [x] Standalone Binance scrape orchestrator (`src/defi_investor/binance_scrape.py`) with disappearance-detection (diff-based sold-out)
+- [x] Cross-venue coin mapping table (`venue_coin_map`) — schema applied; seeding deferred (empty; string-equality heuristic covers current cases)
+- [x] `SupabaseWriter` composite-key aware: upsert uses `venue,product_id`; `log_status_transitions` accepts venue; `fetch_events` accepts venue filter
+- [x] **LIVE: 422 Binance rows in production Supabase** alongside 455 Bitget rows; no collisions
+- [x] Deployed to cron: `Scrape Binance Simple Earn` step added to `.github/workflows/scrape.yml`; fires on same hourly + workflow_dispatch schedule as Bitget (continue-on-error so Binance failure doesn't invalidate a successful Bitget scrape)
+- [ ] Wire Binance events into main scraper.py orchestration (currently sequential; unification is cosmetic — deferred, low priority)
+- [ ] Cross-venue anchor-timing test (Decision 5's timing test — Second Law-safe; needs ~2 weeks of dual-venue data)
+- [ ] Coverage forecast model (updated with real Binance intake; do after 1 week of data)
 
 **Adjustment observed in this phase** (2026-07-28): Binance homepage endpoint only returns *currently available* products (`sellOut: False` on every observed row). This is a semantic difference from Bitget, which explicitly ships a `status=6` sold_out flag on stale products. Consequence: sold-out detection on Binance depends entirely on diff-based state comparison (product_id present in scrape N, absent in scrape N+1 = sold_out event). Anchor definition remains the same in effect (`sold_out_first_seen_at`), but under the hood the trigger is different. Documented in `parsers/binance_earn.py` docstring.
 
@@ -138,3 +138,4 @@ Weekly self-check: run through the adjustment triggers list above. If any is tri
 | 2026-07-28 | Phase 3c mid-progress | Binance parser + fetch + dry-run shipped; 3 empirical adjustments logged in Phase 3c section (sold-out semantics, APY unit, catalog size) |
 | 2026-07-28 | Phase 3c iter 2 | Standalone binance_scrape orchestrator with diff-based sold-out detection; Migration 009 revised to composite PK + widened FKs; 225/225 tests. Blocker: user greenlight to apply Migration 009 to Supabase before wiring Binance into the live write path. |
 | 2026-07-28 | Phase 3c → 3d pivot | Phase 3c parked on Supabase-migration blocker; opened Phase 3d with sigma_20d realized-vol utility (compute_sigma_realized + resample_to_daily in candles.py). 233/233 tests. |
+| 2026-07-28 | Phase 3c LIVE | Migration 009 applied to Supabase (composite PK); SupabaseWriter updated; live Binance scrape landed 422 rows to production alongside 455 Bitget. Added Binance step to `.github/workflows/scrape.yml` — Binance now fires on the same hourly cron as Bitget. |

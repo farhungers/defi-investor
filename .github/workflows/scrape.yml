@@ -34,7 +34,7 @@ jobs:
       - name: Install
         run: pip install --quiet -e .
 
-      - name: Scrape
+      - name: Scrape Bitget Earn
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -42,12 +42,25 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python -m defi_investor.scraper
 
+      # Binance Simple Earn — Phase 3c multi-venue. Runs sequentially after
+      # Bitget in the same job; ~10s fetch + upsert, fits well within the
+      # 5-min job timeout. continue-on-error so a Binance failure doesn't
+      # invalidate a successful Bitget scrape.
+      - name: Scrape Binance Simple Earn
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m defi_investor.binance_scrape
+
       - name: Upload raw capture
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: raw-${{ github.run_id }}
-          path: data/raw/**/*.html
+          path: |
+            data/raw/**/*.html
+            data/raw/**/*binance_earn.json
           retention-days: 30
           if-no-files-found: warn
 
@@ -56,6 +69,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: catalog-${{ github.run_id }}
-          path: data/events/*.jsonl
+          path: |
+            data/events/*.jsonl
+            data/events/binance/*.jsonl
           retention-days: 7
           if-no-files-found: warn
