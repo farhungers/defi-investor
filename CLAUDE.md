@@ -10,7 +10,7 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 
 ## Current state (as of 2026-07-28, Phase 3 Session wrap)
 
-**Phase: 3c LIVE + 3d code-complete + 3e code-surface-complete.** 283/283 tests. `main` locally at `562e424`; last pushed to origin+backup at `cd917d8` — **8 commits ahead of remote** (all awaiting user push).
+**Phase: 3c LIVE + 3d code-complete + 3e code-surface-complete + Migration 010 APPLIED.** 295/295 tests. `main` at `ad18222`, pushed to origin+backup. Working tree clean. Extended session addendum in `docs/PHASE_3_SESSION_1_LOG.md` covers 7 additional commits with 5 real bugs fixed post-code-complete.
 
 **Session 3 output (2026-07-28), sorted by phase:**
 

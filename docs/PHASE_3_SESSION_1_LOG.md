@@ -85,3 +85,58 @@
 7. **Kill counter is at N=3** (A2a, A2b, A3; A2c queued). If a fourth pre-registered hypothesis is added, bump `N_REGISTERED` in `family_wise.py` AND `docs/preregistrations/KILL_COUNTER.md` in the same commit.
 
 8. **Test suite is fast.** 283 tests in ~1.5s. Run before every commit; it catches EarnEvent dataclass drift and Writer protocol drift immediately.
+
+---
+
+## Addendum — post-code-complete iteration (2026-07-28 evening)
+
+Session extended past the initial wrap for hardening + bug hunting + deploy planning. 7 additional commits `61163de` → `ad18222`.
+
+### Bugs found and fixed this addendum
+
+1. **`bitget_listings` scraper silent failure** (`61163de`). Hard-coded `hour==3 AND minute<15` gate never fired because private-repo GH cron didn't land any run in that window for weeks. Rewrote to `age_of_last_snapshot >= 20h` — drift-tolerant. Manually populated the table (1210 online listings).
+
+2. **Vest-unlock coverage was 0%** (`cbb2d25`). Two combined failures: (a) alphabetical truncation past rank 300 hiding coins ONDO/SKYAI/W etc, (b) 5-min GH job timeout aborting the vest step mid-write. Fixed with staleness-based rotation in `snapshot_universe`; manually populated 7 rows for the sold-out coins.
+
+3. **`scrape.yml` 5-min timeout** (`6a2a897`). Bumped to 10 min. Root cause of the vest silent-loss.
+
+4. **A3 label sign convention was inverted** (`61163de`, caught by the integration test). `_label_from_asymmetry` mapped `asymmetry >= theta → +1`, but per the pre-registered formula ask-contraction produces NEGATIVE asymmetry. Would have labelled the wrong direction as +1 forever. Fixed before any A3 labels existed → not a pre-registration violation.
+
+5. **Bitget spot fallback has been silently non-functional since Phase 2** (`0f641b4`, caught by the retention diagnostic). Spot uses `1min`/`4h`/`1day`; perp uses `1m`/`4H`/`1D`. `fetch_candles` passed the same string to both. Every coin without Bitget perp data was silently marked `market="none"`. Fixed with `_PERP_TO_SPOT_GRANULARITY` translation.
+
+### Empirical measurements
+
+- **Bitget candle retention (perp)**: 1m/5m/15m/1H ~30 days, 4H 180+ days. Direct implication: A2b's 1m-walk labelling must run within 30 days of any sold-out event.
+- **Real ingest rate on `books5`**: ~0.7 snapshots/sec/symbol (much lower than theoretical 10/sec — Bitget dedupes when the top-5 doesn't change). Storage math on the free tier: 10 symbols × 2 venues ≈ 300 MB/day, 20 symbols ≈ 600 MB/day.
+
+### Documentation shipped
+
+- `docs/OBSERVATIONS.md` — running observation log, 5 entries: sold-out corpus characterization, A3 sign bug, vest coverage bug, v0.3.0 backfill result, retention + spot bug.
+- `docs/PHASE_3E_LOCAL_STARTUP.md` — user-facing guide for running the daemon on a local machine with retention.
+- `HYPOTHESIS_A2a.md` red-team item #8 — DSR N-count caveat, amendment log entry.
+- `LIB_0002` (Deflated Sharpe) — status `skimmed` → `deep_read` with full equations + implementation implications extracted.
+
+### Live-verified
+
+- Migration 010 applied to Supabase — all 3 tables exist, FK to `earn_events(venue,product_id)` functional, smoke insert+delete passed.
+- v0.3.0 backfill ran live — 21 rows written, all unlabelable (2 failure modes both documented in OBSERVATIONS).
+- L2 capture daemon ran a 15-second smoke test — 21 real rows landed in `orderbook_snapshots_l2` (later deleted by cleanup script).
+- `cleanup_orderbook_snapshots.py` deleted the smoke-test rows correctly.
+
+### Deploy decision outcome
+
+**Deferred**, tracked as Task #12. User's preference order: existing VM > GCP e2-micro free tier > local PC. Oracle Cloud is banned per user's prior experience (memory `feedback_no_oracle_cloud.md`). Awaits: user to check VM specs, or greenlight GCP walkthrough, or go local.
+
+### Test count evolution this session
+
+208/208 → 283/283 → 291/291 → 294/294 → **295/295**. Adding tests kept catching real bugs; the discipline paid off.
+
+### State at session close
+
+- `main` at `ad18222`, pushed to origin + backup
+- Working tree clean (gitignored data dirs excluded)
+- 295/295 tests
+- 17 commits total this session
+- No pending user-blocked items EXCEPT the deploy-target decision (Task #12)
+
+Next session should start with the `gm` trigger routine per `memory/feedback_gm_trigger.md`. First action: check Task #12 and either resolve the deploy choice or proceed with other Phase 3 work (waiting for data accumulation).
