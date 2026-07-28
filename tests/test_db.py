@@ -123,7 +123,8 @@ def test_supabase_writer_requires_creds_or_client():
         SupabaseWriter()
 
 
-def test_upsert_events_calls_upsert_with_on_conflict_product_id():
+def test_upsert_events_calls_upsert_with_composite_on_conflict():
+    # Post-Migration 009: composite PK on (venue, product_id).
     client = FakeClient()
     w = SupabaseWriter(client=client)
     n = w.upsert_events([_mk_event(pid="p1"), _mk_event(pid="p2")])
@@ -131,8 +132,10 @@ def test_upsert_events_calls_upsert_with_on_conflict_product_id():
     calls = client.tables["earn_events"].calls
     assert len(calls) == 1
     assert calls[0]["op"] == "upsert"
-    assert calls[0]["on_conflict"] == "product_id"
+    assert calls[0]["on_conflict"] == "venue,product_id"
     assert {r["product_id"] for r in calls[0]["rows"]} == {"p1", "p2"}
+    # Every row must carry venue (default 'bitget' from EarnEvent dataclass).
+    assert {r["venue"] for r in calls[0]["rows"]} == {"bitget"}
 
 
 def test_upsert_events_serializes_full_schema():
@@ -189,6 +192,7 @@ def test_log_status_transitions_shape():
     assert calls[0]["op"] == "insert"
     rows = calls[0]["rows"]
     assert rows[0] == {
+        "venue": "bitget",
         "product_id": "p1",
         "observed_at": "2026-07-09T22:00:00+00:00",
         "old_status": 2,
@@ -344,9 +348,14 @@ class PaginatingFakeQuery:
         self._pages = pages
         self._select: str | None = None
         self._range: tuple[int, int] | None = None
+        self._eq_filters: list[tuple[str, object]] = []
 
     def select(self, cols: str) -> "PaginatingFakeQuery":
         self._select = cols
+        return self
+
+    def eq(self, col: str, val: object) -> "PaginatingFakeQuery":
+        self._eq_filters.append((col, val))
         return self
 
     def range(self, start: int, end: int) -> "PaginatingFakeQuery":
@@ -356,10 +365,12 @@ class PaginatingFakeQuery:
     def execute(self) -> FakeExecResult:
         assert self._range is not None
         start, end = self._range
-        # Return the page that starts at `start`
         page_size = end - start + 1
         idx = start // page_size
         page = self._pages[idx] if idx < len(self._pages) else []
+        # Apply any .eq() filters
+        for col, val in self._eq_filters:
+            page = [r for r in page if r.get(col) == val]
         return FakeExecResult(data=page)
 
 
@@ -371,11 +382,12 @@ class PaginatingFakeClient:
         return PaginatingFakeQuery(self._pages)
 
 
-def _row(pid: str, tiers: list | None = None) -> dict:
+def _row(pid: str, tiers: list | None = None, venue: str = "bitget") -> dict:
     return {
         "product_id": pid,
         "coin_name": "X",
         "second_biz_line": "Savings",
+        "venue": venue,
         "first_seen_at": "2026-07-09T22:00:00+00:00",
         "last_seen_at": "2026-07-09T22:00:00+00:00",
         "scraper_version": "0.2.0",

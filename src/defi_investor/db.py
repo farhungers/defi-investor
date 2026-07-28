@@ -29,8 +29,10 @@ class Writer(Protocol):
         transitions: Sequence[tuple[str, int, int]],
         observed_at: str,
         raw_capture_sha256: str,
+        *,
+        venue: str = "bitget",
     ) -> int: ...
-    def fetch_events(self) -> dict[str, EarnEvent]: ...
+    def fetch_events(self, *, venue: Optional[str] = "bitget") -> dict[str, EarnEvent]: ...
     def insert_oi_snapshots(self, rows: Sequence[dict]) -> int: ...
     def insert_next_unlocks(self, rows: Sequence[dict]) -> int: ...
     def upsert_bitget_listings(self, rows: Sequence[dict]) -> int: ...
@@ -50,12 +52,14 @@ class NoOpWriter:
         transitions: Sequence[tuple[str, int, int]],
         observed_at: str,
         raw_capture_sha256: str,
+        *,
+        venue: str = "bitget",
     ) -> int:
-        LOG.debug("NoOpWriter.log_status_transitions: %d transitions discarded",
-                  len(transitions))
+        LOG.debug("NoOpWriter.log_status_transitions: %d transitions discarded (venue=%s)",
+                  len(transitions), venue)
         return 0
 
-    def fetch_events(self) -> dict[str, EarnEvent]:
+    def fetch_events(self, *, venue: Optional[str] = "bitget") -> dict[str, EarnEvent]:
         return {}
 
     def insert_oi_snapshots(self, rows: Sequence[dict]) -> int:
@@ -109,13 +113,17 @@ class SupabaseWriter:
         rows = [self._serialize(e) for e in events]
         if not rows:
             return 0
+        # Migration 009 made (venue, product_id) the composite PK. Every
+        # EarnEvent carries venue (default 'bitget'), so on_conflict lists
+        # both columns. This is what makes multi-venue writes safe from
+        # cross-venue product_id collision.
         n_written = 0
         for start in range(0, len(rows), self.UPSERT_BATCH_SIZE):
             batch = rows[start:start + self.UPSERT_BATCH_SIZE]
             (
                 self._client
                 .table("earn_events")
-                .upsert(batch, on_conflict="product_id")
+                .upsert(batch, on_conflict="venue,product_id")
                 .execute()
             )
             n_written += len(batch)
@@ -128,11 +136,21 @@ class SupabaseWriter:
         transitions: Sequence[tuple[str, int, int]],
         observed_at: str,
         raw_capture_sha256: str,
+        *,
+        venue: str = "bitget",
     ) -> int:
+        """Append transitions to earn_events_status_log.
+
+        Post-Migration 009 the FK from status_log to earn_events is composite
+        on (venue, product_id). The `venue` kwarg defaults to 'bitget' for
+        backward compat with the existing Bitget scraper; the Binance scrape
+        orchestrator passes venue='binance'.
+        """
         if not transitions:
             return 0
         rows = [
             {
+                "venue": venue,
                 "product_id": pid,
                 "observed_at": observed_at,
                 "old_status": old,
@@ -142,28 +160,35 @@ class SupabaseWriter:
             for (pid, old, new) in transitions
         ]
         self._client.table("earn_events_status_log").insert(rows).execute()
-        LOG.info("SupabaseWriter.log_status_transitions: %d rows", len(rows))
+        LOG.info("SupabaseWriter.log_status_transitions: %d rows (venue=%s)",
+                 len(rows), venue)
         return len(rows)
 
     FETCH_PAGE_SIZE = 1000
 
-    def fetch_events(self) -> dict[str, EarnEvent]:
+    def fetch_events(self, *, venue: Optional[str] = "bitget") -> dict[str, EarnEvent]:
         """Rehydrate the catalog from Supabase. Used on ephemeral runners
         (GitHub Actions) where data/events/*.jsonl doesn't survive.
 
         Paginated so it scales past the default 1000-row Supabase cap.
+
+        `venue`:
+            - str (default 'bitget'): filter to that venue only. Result key
+              is `product_id` — no venue collision because within one venue,
+              product_id is unique.
+            - None: fetch ALL venues. Result key remains `product_id`; if
+              two venues have the same product_id, last-write-wins in the
+              dict. Callers wanting a multi-venue-safe hydrate should call
+              once per venue and keep results separate.
         """
         catalog: dict[str, EarnEvent] = {}
         start = 0
         while True:
             end = start + self.FETCH_PAGE_SIZE - 1
-            r = (
-                self._client
-                .table("earn_events")
-                .select("*")
-                .range(start, end)
-                .execute()
-            )
+            q = self._client.table("earn_events").select("*")
+            if venue is not None:
+                q = q.eq("venue", venue)
+            r = q.range(start, end).execute()
             rows = r.data or []
             for row in rows:
                 ev = EarnEvent.from_dict(row)
@@ -171,7 +196,8 @@ class SupabaseWriter:
             if len(rows) < self.FETCH_PAGE_SIZE:
                 break
             start += self.FETCH_PAGE_SIZE
-        LOG.info("SupabaseWriter.fetch_events: hydrated %d rows", len(catalog))
+        LOG.info("SupabaseWriter.fetch_events: hydrated %d rows (venue=%s)",
+                 len(catalog), venue)
         return catalog
 
     LISTINGS_UPSERT_BATCH_SIZE = 500

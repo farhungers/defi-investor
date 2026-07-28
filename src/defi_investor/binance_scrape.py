@@ -181,14 +181,14 @@ def run_binance_scrape(
     *,
     project_root: Path,
     writer: Optional[Writer] = None,
-    write_to_writer: bool = False,
+    write_to_writer: bool = True,
 ) -> BinanceScrapeResult:
     """Fetch, parse, diff-detect sold-outs, write JSONL, optionally upsert.
 
-    `write_to_writer` defaults to False because Migration 009 hasn't been
-    applied yet: writing venue='binance' rows to a single-column-PK table
-    would risk cross-venue product_id collisions. Set to True after the
-    migration lands.
+    `write_to_writer` defaults to True post-Migration 009: the `earn_events`
+    table now has composite PK (venue, product_id), so venue='binance' rows
+    coexist with venue='bitget' rows safely. Pre-migration this was False
+    to prevent product_id collisions.
     """
     now = _now_utc()
     scraped_at = now.isoformat()
@@ -236,6 +236,7 @@ def run_binance_scrape(
         transitions: list[tuple[str, int, int]] = [(pid, 2, 6) for pid in disappeared]
         n_logged = writer.log_status_transitions(
             transitions, observed_at=scraped_at, raw_capture_sha256=sha256,
+            venue=VENUE,
         )
 
     return BinanceScrapeResult(
@@ -254,6 +255,8 @@ def run_binance_scrape(
 
 
 def main() -> int:
+    from dotenv import load_dotenv
+    load_dotenv()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     result = run_binance_scrape(project_root=Path("."))
     print("-" * 72)
