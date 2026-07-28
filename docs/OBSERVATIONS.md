@@ -101,6 +101,8 @@ Same fix mirrored in the integration test's local helper. Docstring on the fixed
 
 **Not fixed in this iteration:**
 - The 5-minute job-timeout root cause (too many steps in one job). Actually a bigger problem — even with rotation, if the vest step doesn't complete in the budget, no writes land. Follow-up: consider splitting vest to its own workflow file with its own external cron trigger. Requires user to add a second cron-job.org entry. Deferred.
+
+**Update, later same day.** Bumped `scrape.yml` `timeout-minutes` from 5 → 10 as the minimal effective fix. Worst-case current pipeline is ~7 min; new margin is ~3 min. Splitting vest to its own workflow remains available as a long-term option if the universe grows past what 10 min can cover.
 - Existing v0.2.1 label rows won't retrospectively get `known_vest_unlock_within_3d` populated. Would need a manual UPDATE against Supabase, but with only 1 resolved label in the batch this doesn't materially move the gate.
 
 **Systematic lesson.** Confound-instrumentation bugs are silent by nature: `NULL` on a confound column just means "not evaluated." Whenever we add a confound to the labeler, we should also add a coverage-monitoring assertion (e.g. "at least X% of resolved primary labels have this confound populated") so a broken data-collection pipeline shows up loudly.

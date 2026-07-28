@@ -19,7 +19,12 @@ permissions:
 jobs:
   scrape:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # Bumped from 5 -> 10 on 2026-07-28 after OBSERVATIONS.md caught the
+    # vest step silently losing writes to timeout. Worst-case current
+    # pipeline: Bitget scrape (~30s) + Binance scrape (~15s) + OI 300
+    # coins (~60s) + vest 300 coins (~5m at 0.5s sleep + fetch time) +
+    # listings when it fires (~5s) ~= 7 min. 10 min gives ~3 min margin.
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -43,9 +48,8 @@ jobs:
         run: python -m defi_investor.scraper
 
       # Binance Simple Earn — Phase 3c multi-venue. Runs sequentially after
-      # Bitget in the same job; ~10s fetch + upsert, fits well within the
-      # 5-min job timeout. continue-on-error so a Binance failure doesn't
-      # invalidate a successful Bitget scrape.
+      # Bitget in the same job; ~10s fetch + upsert. continue-on-error so
+      # a Binance failure doesn't invalidate a successful Bitget scrape.
       - name: Scrape Binance Simple Earn
         continue-on-error: true
         env:
