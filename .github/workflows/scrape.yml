@@ -2,10 +2,11 @@ name: scrape
 
 on:
   schedule:
-    # every 15 minutes. GH Actions cron is best-effort — occasional delays
-    # of 5-15 min under load are expected. Scraper hydrates prior state from
-    # Supabase so lost runs don't corrupt first_seen_at / status_log.
-    - cron: '*/15 * * * *'
+    # Hourly. Empirical: fastest observed earn_events status transition = 166 min
+    # (median 576 min). Hourly gives >2x safety margin vs fastest, and 1h stamp
+    # is 4% of the 24h label horizon (negligible smearing). Private-repo GH cron
+    # throttles this schedule further, so an external cron hits workflow_dispatch.
+    - cron: '0 * * * *'
   workflow_dispatch: {}
 
 concurrency:
