@@ -114,7 +114,8 @@ The A3 hypothesis. Different signal channel. Different runtime model.
 - [x] `venue_coin_map` seeder (`scripts/seed_venue_coin_map.py`) — fetches Bitget `/spot/public/symbols` + Binance `/api/v3/exchangeInfo`, cross-references with earn coin names, upserts prefix-alias divergences. Live run wrote 3 rows: `1000CHEEMS`→`CHEEMSUSDT`, `1000SATS`→`SATSUSDT`, `1MBABYDOGE`→`BABYDOGEUSDT`. Also flagged: 123 earn coins absent from Bitget spot, 119 absent from Binance spot (Earn-only campaigns; can't stream L2 for these).
 - [x] Universe manager consults `venue_coin_map` for inst_id overrides (2 new tests). Live: 3 aliased inst_ids now emitted correctly.
 - [ ] Universe manager should mark venue-absent coins as `inst_id=None` per venue so the daemon skips them entirely (currently they fail with "doesn't exist" WS error — non-fatal but noisy)
-- [ ] A3 backfill (parallel to backfill_labels_v030 for A2b)
+- [x] A3 backfill (`scripts/backfill_labels_a3.py`) — reads sold-out events, extracts `depth_asymmetry_5min` from stored L2 snapshots (Bitget per A3 spec), fetches 24h post-anchor spot return via existing candles fetcher, writes to `orderbook_features`. Labeling: theta_asym=0.5 pre-committed; exclusions per spec (no_orderbook_data, ws_gap_over_60s_in_pre_window, no_spot_candles, within_7d_of_TGE).
+- [x] A3 gate report (`scripts/gate_report_a3.py`) — implements A3's four gate criteria verbatim (mean-R sign, Welch t p vs Bonferroni-corrected alpha, n>=30, coverage>=70%). Handles missing Migration 010 gracefully with a friendly next-steps message.
 - [ ] A3 gate report (t-test per A3 spec, sibling to gate_report_a2b)
 - [ ] Retention policy (nightly TTL prune of raw snapshots)
 
@@ -167,3 +168,4 @@ Weekly self-check: run through the adjustment triggers list above. If any is tri
 | 2026-07-28 | Phase 3e storage layer | BatchedL2Writer shipped (async queue + 500-row/2s batching + drop-oldest backpressure). 271/271 tests. Ready to wire into a daemon. |
 | 2026-07-28 | Phase 3e daemon | Universe manager (541 live coins) + capture_daemon (`python -m defi_investor.orderbook.capture_daemon`) shipped. Empty-`bitget_listings` fallback bug caught + fixed in same iteration. Cross-venue coin-name mismatch observed (e.g. earn `1000CAT` vs Bitget spot `1000CATS`); `venue_coin_map` seeding queued. 281/281 tests. |
 | 2026-07-28 | Phase 3e coin-map | `venue_coin_map` seeder shipped and run live: 3 Bitget prefix-aliases persisted + 242 venue-absent coins identified. Universe manager consults the map; 2 new tests. Identity renamed Vault→Kepler mid-session per user request. 283/283. |
+| 2026-07-28 | Phase 3e labeling | A3 backfill + A3 gate report shipped. Gate handles missing Migration 010 gracefully. Full A3 code surface now exists pending only capture_daemon deploy + Migration 010 apply + data accumulation. |
