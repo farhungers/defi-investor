@@ -103,11 +103,12 @@ The A3 hypothesis. Different signal channel. Different runtime model.
 - [x] Design doc — `docs/ORDERBOOK_DESIGN.md` covers deploy options, storage volume, universe scoping, data model, feature spec, retention, build plan
 - [x] Bitget spot L2 WS client prototype (`src/defi_investor/orderbook/bitget_l2.py`) — subscribes to `books5`, verified live: ~10 snapshots/sec BTCUSDT, auto-reconnect with exponential backoff, ping/pong keepalive. Locally runnable via `python -m defi_investor.orderbook.bitget_l2 BTCUSDT ETHUSDT`.
 - [x] `websockets>=13.0` added to pyproject dependencies
+- [x] Feature extractor (`src/defi_investor/orderbook/features.py::compute_depth_asymmetry_5min`) per A3 spec: pre + pre_pre 5-min windows, log-ratio asymmetry, ws_gap_max_s + coverage_pre exclusion signals. 12 tests covering symmetric/ask-contract/bid-contract/short-book/zero-depth/coverage. 264/264 total.
+- [x] Migration 010 drafted (`orderbook_snapshots_l2`, `orderbook_features`, `orderbook_universe`) — retention TTL via pg_cron noted; NOT auto-installed
 - [ ] Binance spot L2 WS client (mirror of Bitget shape)
 - [ ] Storage: async batched inserts to Supabase, backpressure-aware
-- [ ] Migration 010: `orderbook_snapshots_l2` + `orderbook_features` tables
+- [ ] Apply Migration 010 to Supabase (**user greenlight; wait until we're ready to store data**)
 - [ ] Universe manager (daily refresh of tracked coins from `earn_events`)
-- [ ] Feature extractor (`depth_asymmetry_5min` per A3 spec)
 - [ ] A3 backfill (parallel to backfill_labels_v030 for A2b)
 - [ ] A3 gate report (t-test per A3 spec, sibling to gate_report_a2b)
 - [ ] Retention policy (nightly TTL prune of raw snapshots)
@@ -156,3 +157,4 @@ Weekly self-check: run through the adjustment triggers list above. If any is tri
 | 2026-07-28 | Phase 3d backfill | `scripts/backfill_labels_v030.py` written; iterates sold-out events across both venues, writes 3 rows per event (one per horizon) using labeler_version suffix trick to keep composite PK intact; production has 9 sold-out events pending. Not yet run against production. |
 | 2026-07-28 | Phase 3d gate | Holm-Bonferroni helper + A2b gate report shipped. `family_wise.N_REGISTERED=3` tracks KILL_COUNTER.md. A2b gate uses binomial test per horizon. 252/252 tests. Report runs today (descriptive until labels exist). |
 | 2026-07-28 | Phase 3e prototype | Bitget spot L2 WS client verified live (~10 snapshots/sec). Design doc `docs/ORDERBOOK_DESIGN.md` covers deploy options, storage volume, universe scoping, feature spec. Blocked on user decision for deploy target (local vs cloud). |
+| 2026-07-28 | Phase 3e feature+schema | `compute_depth_asymmetry_5min` shipped as pure function over L2 snapshot iterables (12 tests). Migration 010 drafted (`orderbook_snapshots_l2`, `orderbook_features`, `orderbook_universe`). 264/264. |
