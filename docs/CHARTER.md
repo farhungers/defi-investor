@@ -1,8 +1,8 @@
 # CHARTER — defi-investor investigation
 
-**Author:** Vault (seeded 2026-07-09)
-**Current phase:** 2 (Infrastructure complete, pilot burning for labels)
-**Next phase gate:** Phase 3 (Statistical claim). Gate call at n ≥ 30 primary universe. All METHOD §1 confounds instrumented (age, TGE, macro proxy, positioning, OI, vest, regime). Control-arm data collecting; DiD analysis deferred to Phase 3 research work.
+**Author:** Vault seeded 2026-07-09; Kepler continuing from Phase 3
+**Current phase:** 3 sub-phases 3c/3d/3e all shipped code (2026-07-28). Phase 3c LIVE (multi-venue capture); Phase 3d code-complete (v0.3.0 labeler + backfill + A2b gate + Holm-Bonferroni); Phase 3e code-surface-complete (L2 pipeline: WS clients + storage + universe + capture daemon + A3 backfill + A3 gate).
+**Next phase gate:** Phase 3f — gate call on 2026-09-30 or n≥30 primary universe (per ROADMAP_V2.md), whichever first. FRAME_C1 pre-registered; A2a/A2b/A3 hypothesis docs + YAMLs + git tags (`prereg-*-v1`) + OSF timestamps (node `98kez`) in place. Kill-counter divisor `N=3` (A2c queued post-gate).
 
 ## 1. Hypothesis
 
@@ -15,16 +15,20 @@ Bitget Earn program parameters (product type, APR, pool size, open time, sold-ou
 ## 2. Scope
 
 **In scope:**
-- Bitget Earn products only, all product types (PoolX, Simple Earn Flexible, Simple Earn Fixed, Shark Fin, Dual Investment, On-chain Earn)
+- Bitget Earn products, all product types (PoolX, Simple Earn Flexible, Simple Earn Fixed, Shark Fin, Dual Investment, On-chain Earn)
+- **Binance Simple Earn products** (added 2026-07-28 in Phase 3c per Decision 1: multi-venue detection universe, Bitget-tradable filter). Both Bitget and Binance events count as "primary" if the underlying coin is Bitget-tradable.
 - Tokens listed on Bitget perp or spot at any point during the observation window
 - Correlation studies, not causation
 - Public data only (no privileged sources, no insider info)
+- L2 order-book snapshots for informed-positioning signal per HYPOTHESIS_A3
 
 **Out of scope:**
-- Other exchanges' Earn products (Binance Simple Earn, OKX Earn, Bybit Earn). Not yet. Cross-exchange comparison is Phase 5+.
+- Other venues' Earn products beyond Bitget and Binance (OKX Earn, Bybit Earn). Cross-exchange comparison would require another expansion decision.
 - Non-Earn Bitget promotions (Launchpad, airdrops, referral rewards)
 - On-chain analysis of token contract (LP unlocks, dev wallet moves). Different data stack. Different project.
-- Execution / trade automation. Alerts only if Phase 3 passes.
+- Execution / trade automation. Alerts only if Phase 3 gate passes.
+
+**Superseded by pre-registration:** The informal H1/H2/H3 sub-hypotheses below are the original Phase 1 framing. The Phase 3 gate operates on the formal `FRAME_C1` frame + `A2a` / `A2b` / `A3` hypothesis docs in `docs/preregistrations/`. H1 corresponds most closely to `A2a` (fixed-horizon return on sold-out anchor). H2 (unlock cliff) has an infrastructure hook via `earn_next_unlocks` but no formal pre-registration yet. H3 (announcement window) is not currently pre-registered.
 
 ## 3. Kill criteria (any one halts the project)
 

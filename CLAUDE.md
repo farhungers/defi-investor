@@ -8,38 +8,38 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 
 **Do not touch mm-radar from this project.** Sibling. Different discipline stack.
 
-## Current state (as of 2026-07-11, Phase 2 Session 2 wrap)
+## Current state (as of 2026-07-28, Phase 3 Session wrap)
 
-**Phase: 2 — infrastructure complete. All METHOD §1 confound slots instrumented. Pilot burning for labels.** 208/208 tests. `main` at `f4b0020` on `github.com/farhungers/defi-investor`. Working tree clean.
+**Phase: 3c LIVE + 3d code-complete + 3e code-surface-complete.** 283/283 tests. `main` locally at `562e424`; last pushed to origin+backup at `cd917d8` — **8 commits ahead of remote** (all awaiting user push).
 
-Component status:
-- Scraper (Phase 1): LIVE on `*/15`. `earn_events` ≈399 rows, `earn_events_status_log` accumulating 2→6 transitions.
-- Telegram alerts: LIVE. `@Defiinvestor_Bot` sends observation-only rich cards on new listings, sold-outs, re-opens, stalls, drift.
-- Labeler (Phase 2): LIVE, nightly at 04:00 UTC. `earn_event_labels` at 104 rows across 4 labeler versions. `LABELER_VERSION = "0.2.1"` current.
-- OI snapshots (§1.3): LIVE, `*/15` cadence. Migration 005 applied. `earn_oi_snapshots` populating.
-- Vest unlocks (§1.2): LIVE, hourly-aligned. Migration 006 applied. `earn_next_unlocks` from tokenomist.ai SSR. 5-10% coverage expected.
-- Control-arm (§1.4): LIVE, daily 03:00 UTC. Migration 007 applied. `bitget_listings` from `/spot/public/symbols`. DiD analysis deferred to Phase 3.
-- Regime confound (§1.6): LIVE. Migration 008 applied. `btc_30d_realized_vol` + `btc_ret_30d_prior` on `earn_event_labels`; gate report split replaced with proper regime binary.
-- Backtest primitives: BUILT FROM SCRATCH from de Prado Ch 7 (purged CV) + Ch 14 (PSR / HHI / uniqueness). `psr()` accepts float n; gate reads effective-n PSR after uniqueness deflation.
-- Gate report: `scripts/gate_report.py` runnable today. Primary-universe rollup meaningful once first 7-day windows close (~2026-07-16 onward).
-- Research library: `resaerchBOOKS/` (gitignored) holds AFML + MLAM PDFs; `docs/REFERENCES.md` maps sections to implemented vs queued work.
+**Session 3 output (2026-07-28), sorted by phase:**
 
-**Immediate next-session behavior:** WATCH, DO NOT TOUCH. Second Law per CHARTER §5. Real Phase 3 gate call is n ≥ 30 primary universe. Realistic ETA 2-4 weeks from 2026-07-11.
+_Phase 3a — library-first anchor:_ complete. `docs/library/` Zettelkasten (37 LIB entries) + `docs/preregistrations/` scaffold (FRAME_C1, HYPOTHESIS_A2a/A2b/A3, YAML_SCHEMA, KILL_COUNTER, REGISTRY, README).
+
+_Phase 3b — ops foundation:_ complete. External cron via cron-job.org → GitHub Actions workflow_dispatch (Bitget cron unstuck from private-repo throttling). OSF integration: node `98kez` public, all pre-registration docs uploaded (`scripts/upload_prereg_to_osf.py`, idempotent by sha256). Git tags `prereg-A2a-v1`, `prereg-A2b-v1`, `prereg-A3-v1` on commit `8de07a3`, pushed to origin + backup.
+
+_Phase 3c — multi-venue (LIVE):_ Migration 009 applied (composite PK `(venue, product_id)` + widened FKs on status_log and labels). `SupabaseWriter` composite-key aware. Binance Simple Earn parser + fetcher + scrape orchestrator + venue_coin_map shipped and running in `.github/workflows/scrape.yml` alongside Bitget. **422 Binance rows** in production Supabase alongside 455 Bitget rows. `venue_coin_map` seeded with 3 aliases (1000CHEEMS→CHEEMSUSDT etc.); 242 venue-absent coins identified.
+
+_Phase 3d — v0.3.0 triple-barrier labeler (code-complete):_ `src/defi_investor/labelers/triple_barrier_v030.py` implements HYPOTHESIS_A2b exactly (barriers = anchor_close × exp(±k × sigma_20d), k=2.0 pre-committed, multi-horizon 24h/48h/168h returned per call). `scripts/backfill_labels_v030.py` writes 3 rows/event via labeler_version suffix trick (`0.3.0#h24` etc.). `src/defi_investor/backtest/family_wise.py` has Holm-Bonferroni (N_REGISTERED=3 tracks KILL_COUNTER.md). `scripts/gate_report_a2b.py` runs binomial test per horizon with Holm cascade. **Backfill not yet run** — 9 pending sold-out events (8 Bitget + 1 Binance) would produce ~27 label rows.
+
+_Phase 3e — L2 order-book pipeline (code-surface-complete):_ `src/defi_investor/orderbook/{bitget_l2,binance_l2}.py` both live-verified (~10 snapshots/sec/symbol, auto-reconnect). `L2Snapshot` shared shape. `features.compute_depth_asymmetry_5min` per A3 spec (12 tests). `storage.BatchedL2Writer` (async, 500-row/2s batches, drop-oldest backpressure, error-resilient, 7 tests). `universe.build_universe` returns 541 coins with venue_coin_map overrides (10 tests including empty-`bitget_listings` fallback regression). `capture_daemon.py` runnable with `--venues`, `--max-symbols`, `--dry-run`. `scripts/backfill_labels_a3.py` + `scripts/gate_report_a3.py` complete. **Migration 010 NOT applied**, capture_daemon NOT deployed (blocked on user deploy-target decision A/B/C per `docs/ORDERBOOK_DESIGN.md`).
+
+_Housekeeping this session:_ Control-arm bug fix in `scripts/gate_report.py` (dead-code KeyError + n<2 guard). BGBTC parser drift fix (added `OnChainElite` to `LIST_DATA_BIZLINES`). Identity renamed Vault→Kepler mid-session per user.
+
+**Immediate next-session behavior:** Three user decisions pending (all noted at end of every recent commit):
+1. Push 8 commits to origin + backup.
+2. Run `scripts/backfill_labels_v030.py` live (9 events × 3 horizons; idempotent).
+3. Pick deploy target for `capture_daemon` (A local / B free cloud / C paid VPS $4-6/mo per `docs/ORDERBOOK_DESIGN.md`); then apply Migration 010 and start the daemon.
 
 **Read these before doing anything:**
-- `docs/PHASE_2_SESSION_2_LOG.md` — freshest handoff (five addenda covering OI, uniqueness-weighted PSR, vest, control-arm, regime).
-- `docs/REFERENCES.md` — book stack and phase mapping.
-- `docs/PHASE_2_SESSION_1_LOG.md` — prior session.
-- `docs/PHASE_2_PLAN.md` — the plan.
-- `docs/METHOD.md` — the discipline (confounds, gates, sign conventions).
-- `docs/CHARTER.md` — kill criteria.
-- Memory: `feedback_no_borrowing_from_siblings.md`, `feedback_no_premature_signals.md`. Non-negotiable.
-
-**Only remaining unblocked build items are money-blocked:**
-1. Paid TOTAL3 data source (CoinGecko Pro / CMC).
-2. Paid vest data source (CryptoRank Business / DefiLlama Pro).
-
-Everything else is calendar-bound or deferred to Phase 3 research.
+- `docs/PHASE_3_SESSION_1_LOG.md` — this session's log (write it before closing).
+- `docs/ROADMAP_V2.md` — current phase plan with adjustment triggers.
+- `docs/PHASE_2_SESSION_2_LOG.md` — prior session (Phase 2 wrap).
+- `docs/preregistrations/README.md` and `KILL_COUNTER.md` — the discipline layer.
+- `docs/METHOD.md` — confounds, gates, sign conventions.
+- `docs/CHARTER.md` — kill criteria + scope (updated 2026-07-28 for multi-venue).
+- `docs/ORDERBOOK_DESIGN.md` — Phase 3e deploy options.
+- Memory: `feedback_no_borrowing_from_siblings.md`, `feedback_no_premature_signals.md`, `feedback_gm_trigger.md`, `user_kepler_identity.md`. Non-negotiable.
 
 Read in this order:
 1. `README.md` — vision + hypothesis in plain language
