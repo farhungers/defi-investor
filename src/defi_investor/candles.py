@@ -243,3 +243,66 @@ def compute_atr(df: pd.DataFrame, *, period: int = 24) -> pd.Series:
     atr = tr.ewm(alpha=1.0 / period, adjust=False, min_periods=period).mean()
     atr.name = "atr"
     return atr
+
+
+def compute_sigma_realized(
+    df: pd.DataFrame,
+    *,
+    period: int = 20,
+    price_col: str = "close",
+) -> pd.Series:
+    """Trailing realized volatility of daily log returns.
+
+    Given an OHLC DataFrame indexed by daily bar timestamp, return a Series
+    aligned with df.index where each entry is the sample standard deviation
+    of the past `period` daily log returns ending at that timestamp
+    (inclusive).
+
+    Definition: sigma(t) = std({r_{t-period+1}, ..., r_t}) with population
+    normalisation (ddof=0). NOT annualized; consumers scale by horizon.
+    First `period` bars are NaN while the rolling window warms up.
+
+    Used by v0.3.0 triple-barrier labeler per HYPOTHESIS_A2b spec:
+    barriers set at ±k × sigma_20d where sigma_20d is this function with
+    period=20 on daily bars.
+
+    The caller is responsible for passing daily-resolution bars. On 1H or
+    finer bars this function will happily compute a rolling std of hourly
+    returns, which is a DIFFERENT quantity. Convert to daily bars first.
+    """
+    if df.empty or price_col not in df.columns:
+        return pd.Series(dtype="float64", index=df.index, name=f"sigma_{period}d")
+    close = df[price_col].astype("float64")
+    log_ret = (close / close.shift(1)).apply(_safe_log)
+    sigma = log_ret.rolling(window=period, min_periods=period).std(ddof=0)
+    sigma.name = f"sigma_{period}d"
+    return sigma
+
+
+def _safe_log(x: float) -> float:
+    """log(x) but returns NaN for non-positive values instead of raising."""
+    import math
+    if x is None or not isinstance(x, (int, float)) or x <= 0 or math.isnan(x):
+        return float("nan")
+    return math.log(x)
+
+
+def resample_to_daily(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert a sub-daily OHLCV DataFrame to daily bars (UTC calendar).
+
+    Aggregation: open=first, high=max, low=min, close=last, base_volume=sum,
+    quote_volume=sum. Index becomes date-normalized (midnight UTC per day).
+    """
+    if df.empty:
+        return df
+    agg = {
+        "open": "first",
+        "high": "max",
+        "low": "min",
+        "close": "last",
+    }
+    for extra in ("base_volume", "quote_volume"):
+        if extra in df.columns:
+            agg[extra] = "sum"
+    daily = df.resample("1D").agg(agg).dropna(how="all")
+    return daily
