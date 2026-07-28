@@ -124,6 +124,27 @@ def test_fetch_candles_falls_back_to_spot_on_empty_perp():
     assert fc.calls[-1]["url"] == SPOT_URL
 
 
+def test_fetch_candles_translates_granularity_for_spot_fallback():
+    """Bitget spot uses 1min/4h/1day; perp uses 1m/4H/1D. The fallback
+    must translate. Regression guard for the silent-empty-fallback bug
+    caught 2026-07-28 by scripts/probe_bitget_candle_retention.py."""
+    fc = FakeClient(
+        perp_responses=[FakeResponse(status_code=200, body={"code": "00000", "data": []})],
+        spot_responses=[FakeResponse(status_code=200, body={
+            "code": "00000", "data": _mk_rows(1_700_000_000_000, 14_400_000, n=1),
+        })],
+    )
+    df, prov = fetch_candles(
+        symbol="RARECOIN", start_ms=1_700_000_000_000,
+        end_ms=1_700_000_000_000 + 14_400_000, granularity="4H", client=fc,
+    )
+    assert df is not None
+    # Perp call used the '4H' string as-is
+    assert fc.calls[0]["params"]["granularity"] == "4H"
+    # Spot fallback translated to '4h'
+    assert fc.calls[-1]["params"]["granularity"] == "4h"
+
+
 def test_fetch_candles_returns_none_when_neither_market_has_data():
     fc = FakeClient(
         perp_responses=[FakeResponse(status_code=200, body={"code": "00000", "data": []})],

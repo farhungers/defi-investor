@@ -155,6 +155,34 @@ def _fetch_market(
     return df, last_status, None, n_pages
 
 
+# Bitget spot uses different granularity strings than perp. Discovered
+# empirically 2026-07-28 via scripts/probe_bitget_candle_retention.py:
+#   perp:  1m 5m 15m 30m 1H 4H 6H 12H 1D 3D 1W 1M
+#   spot:  1min 5min 15min 30min 1h 4h 6h 12h 1day 1week 1M (+ *utc variants)
+# Without this translation, spot fallback has been silently rejecting
+# every fetch since the labeler was written — no spot-only coins were
+# ever labeled.
+_PERP_TO_SPOT_GRANULARITY = {
+    "1m": "1min",
+    "5m": "5min",
+    "15m": "15min",
+    "30m": "30min",
+    "1H": "1h",
+    "4H": "4h",
+    "6H": "6h",
+    "12H": "12h",
+    "1D": "1day",
+    "3D": "3Dutc",   # no non-utc equivalent on spot
+    "1W": "1week",
+    "1M": "1M",
+}
+
+
+def _spot_granularity(g: str) -> str:
+    """Translate a perp-format granularity to the spot-endpoint format."""
+    return _PERP_TO_SPOT_GRANULARITY.get(g, g)
+
+
 def fetch_candles(
     *,
     symbol: str,
@@ -195,9 +223,11 @@ def fetch_candles(
             )
         LOG.info("perp empty/failed for %s (err=%s); falling back to spot",
                  symbol, err)
-        # Fall back to spot
+        # Fall back to spot. Spot uses a different granularity string
+        # format — see _PERP_TO_SPOT_GRANULARITY.
+        spot_g = _spot_granularity(granularity)
         df2, status2, err2, pages2 = _fetch_market(
-            SPOT_URL, symbol=symbol, granularity=granularity,
+            SPOT_URL, symbol=symbol, granularity=spot_g,
             start_ms=start_ms, end_ms=end_ms,
             product_type=None, client=client,
         )

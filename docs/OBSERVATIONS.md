@@ -128,6 +128,38 @@ Same fix mirrored in the integration test's local helper. Docstring on the fixed
 - Does NOT weaken A2a (fixed-horizon v0.2.1 uses 4H bars which have longer retention; 1 resolved v0.2.1 label already exists for SKYAI).
 
 **Roadmap addition.** Add empirical Bitget 1m/4H retention measurement as a Phase 3-adjacent diagnostic. Also add a proactive "backfill within X days of sold-out" cadence check to `backfill_labels_v030.py` so we don't lose events by delay.
+
+## 2026-07-28 — Bitget candle retention measured + silent spot-fallback bug found (Kepler)
+
+**Setup.** Wrote and ran `scripts/probe_bitget_candle_retention.py` to close the open question from the v0.3.0 backfill.
+
+**Measured retention (BTCUSDT, perp endpoint):**
+
+| Granularity | Retention | Oldest bar seen |
+|---|---|---|
+| 1m  | ~30 days | 2026-06-28 |
+| 5m  | ~30 days | 2026-06-27 |
+| 15m | ~30 days | 2026-06-27 |
+| 1H  | ~30 days | 2026-06-20 |
+| 4H  | 180+ days | 2025-12-27 |
+| 1D  | (returned data at day-0 but not older windows; probably 1D data structured differently in the API) |
+
+**Direct implications:**
+
+- **A2b's 1m-walk labeling is time-limited to a ~30-day retrospective window.** Events sold-out more than 30 days before backfill runs cannot be labelled. This confirms the earlier `anchor_before_first_walk_bar` finding. To capture the full A2b corpus, backfill must run at least every 30 days — but realistically within days of a sold-out event to keep options open.
+- **A2a's 4H labeling has 180+ day retrospective window** — safe for the current corpus. The one SKYAI label (2026-07-09 anchor, resolved) was well within the 4H retention.
+
+**Bonus bug caught by the diagnostic:** the diagnostic script's SPOT endpoint returned no data for ANY granularity. Manual probing revealed that **Bitget spot and perp use DIFFERENT granularity string formats:**
+- perp:  `1m` `5m` `15m` `30m` `1H` `4H` `6H` `12H` `1D` `3D` `1W` `1M`
+- spot: `1min` `5min` `15min` `30min` `1h` `4h` `6h` `12h` `1day` `1week` `1M`
+
+Our `fetch_candles` fallback path passed the same string to both endpoints. So the spot fallback has been **silently non-functional since Phase 2 shipped**. Impact: any coin without Bitget perp data (delisted, or Earn-only, or perp launched later than spot) was being labelled as `market="none"` and excluded from primary, even when spot data was available.
+
+**Fix.** Added a translation map `_PERP_TO_SPOT_GRANULARITY` in `candles.py` that translates before the spot fallback call. Regression test in `tests/test_candles.py`. 295/295 tests pass.
+
+**Retrospective corpus impact.** The v0.2.1 labels currently show `market="none"` for some rows. With the spot fallback now functional, re-running `scripts/backfill_labels.py` MIGHT yield new labels for those events. But — this is a code fix that changes label output for existing labels, which is Second-Law-adjacent. Decision: leave existing v0.2.1 rows as-is; the fix applies to labels going forward. If we want the retrospective rescue, bump `LABELER_VERSION` to `0.2.2` and re-label; that keeps the audit trail clean.
+
+**Systematic lesson.** Silent-fallback failures are the worst class of bug: no error, just quiet degradation of coverage. When adding fallback paths in the future, always instrument with a "fallback was needed AND SUCCEEDED" counter, not just success/failure of the primary.
 - Existing v0.2.1 label rows won't retrospectively get `known_vest_unlock_within_3d` populated. Would need a manual UPDATE against Supabase, but with only 1 resolved label in the batch this doesn't materially move the gate.
 
 **Systematic lesson.** Confound-instrumentation bugs are silent by nature: `NULL` on a confound column just means "not evaluated." Whenever we add a confound to the labeler, we should also add a coverage-monitoring assertion (e.g. "at least X% of resolved primary labels have this confound populated") so a broken data-collection pipeline shows up loudly.
