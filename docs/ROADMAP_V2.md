@@ -111,7 +111,9 @@ The A3 hypothesis. Different signal channel. Different runtime model.
 - [x] Universe manager (`src/defi_investor/orderbook/universe.py`) — union of active-earn + recent-earn (30d), Bitget-listings filter with empty-table fallback. 10 tests. Live-verified 541 coins.
 - [x] L2 capture daemon (`src/defi_investor/orderbook/capture_daemon.py`) — starts writer, spawns Bitget + Binance WS batches (Bitget 40/msg cap, Binance 150 streams/URL cap), periodic combined stats logging. `--max-symbols` cap, `--dry-run` flag, `--venues` filter. Live-verified end-to-end in dry-run mode.
 - [ ] Apply Migration 010 to Supabase (**user greenlight; wait until we're ready to store data**)
-- [ ] Coin-name mapping between earn_events and Bitget/Binance spot inst_ids (some divergence observed: earn `1000CAT` vs Bitget spot `1000CATS`). Populate `venue_coin_map` via a scraper against Bitget's `/spot/public/symbols` and Binance's `/api/v3/exchangeInfo`.
+- [x] `venue_coin_map` seeder (`scripts/seed_venue_coin_map.py`) — fetches Bitget `/spot/public/symbols` + Binance `/api/v3/exchangeInfo`, cross-references with earn coin names, upserts prefix-alias divergences. Live run wrote 3 rows: `1000CHEEMS`→`CHEEMSUSDT`, `1000SATS`→`SATSUSDT`, `1MBABYDOGE`→`BABYDOGEUSDT`. Also flagged: 123 earn coins absent from Bitget spot, 119 absent from Binance spot (Earn-only campaigns; can't stream L2 for these).
+- [x] Universe manager consults `venue_coin_map` for inst_id overrides (2 new tests). Live: 3 aliased inst_ids now emitted correctly.
+- [ ] Universe manager should mark venue-absent coins as `inst_id=None` per venue so the daemon skips them entirely (currently they fail with "doesn't exist" WS error — non-fatal but noisy)
 - [ ] A3 backfill (parallel to backfill_labels_v030 for A2b)
 - [ ] A3 gate report (t-test per A3 spec, sibling to gate_report_a2b)
 - [ ] Retention policy (nightly TTL prune of raw snapshots)
@@ -164,3 +166,4 @@ Weekly self-check: run through the adjustment triggers list above. If any is tri
 | 2026-07-28 | Phase 3e Binance client | Binance spot L2 WS client live-verified. L2Snapshot promoted to shared shape. Both venues drop-in interchangeable — feature extractor works over either. 264/264. |
 | 2026-07-28 | Phase 3e storage layer | BatchedL2Writer shipped (async queue + 500-row/2s batching + drop-oldest backpressure). 271/271 tests. Ready to wire into a daemon. |
 | 2026-07-28 | Phase 3e daemon | Universe manager (541 live coins) + capture_daemon (`python -m defi_investor.orderbook.capture_daemon`) shipped. Empty-`bitget_listings` fallback bug caught + fixed in same iteration. Cross-venue coin-name mismatch observed (e.g. earn `1000CAT` vs Bitget spot `1000CATS`); `venue_coin_map` seeding queued. 281/281 tests. |
+| 2026-07-28 | Phase 3e coin-map | `venue_coin_map` seeder shipped and run live: 3 Bitget prefix-aliases persisted + 242 venue-absent coins identified. Universe manager consults the map; 2 new tests. Identity renamed Vault→Kepler mid-session per user request. 283/283. |

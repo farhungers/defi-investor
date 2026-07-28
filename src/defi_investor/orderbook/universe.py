@@ -34,9 +34,9 @@ DEFAULT_QUOTE = "USDT"
 @dataclass(frozen=True)
 class UniverseEntry:
     coin_name: str
-    bitget_inst_id: str          # e.g. BTCUSDT
-    binance_inst_id: str         # same convention
-    reason: str                  # 'active_earn' | 'recent_earn'
+    bitget_inst_id: Optional[str]    # None if coin is not listed on Bitget spot
+    binance_inst_id: Optional[str]   # None if coin is not listed on Binance spot
+    reason: str                      # 'active_earn' | 'recent_earn'
 
 
 def build_universe(
@@ -46,6 +46,7 @@ def build_universe(
     quote: str = DEFAULT_QUOTE,
     filter_bitget_listed: bool = True,
     now_utc: Optional[datetime] = None,
+    coin_map_overrides: Optional[dict[tuple[str, str], str]] = None,
 ) -> list[UniverseEntry]:
     """Query Supabase and return the current L2 capture universe.
 
@@ -117,15 +118,23 @@ def build_universe(
         except Exception as e:  # noqa: BLE001
             LOG.warning("bitget_listings query failed; skipping filter: %s", e)
 
+    # 4. Coin-map overrides for venues where the earn name differs from the
+    # spot inst_id (e.g. earn '1000CAT' vs Bitget spot '1000CATSUSDT').
+    # `coin_map_overrides` is keyed by (venue, canonical_coin) -> venue-specific inst_id.
+    if coin_map_overrides is None:
+        coin_map_overrides = _fetch_coin_map_overrides(sb)
+
     all_coins = {**active_earn, **recent_earn}
     out: list[UniverseEntry] = []
     for coin, reason in sorted(all_coins.items()):
         if bitget_listed is not None and coin not in bitget_listed:
             continue
+        bitget_inst = coin_map_overrides.get(("bitget", coin), f"{coin}{quote}")
+        binance_inst = coin_map_overrides.get(("binance", coin), f"{coin}{quote}")
         out.append(UniverseEntry(
             coin_name=coin,
-            bitget_inst_id=f"{coin}{quote}",
-            binance_inst_id=f"{coin}{quote}",
+            bitget_inst_id=bitget_inst,
+            binance_inst_id=binance_inst,
             reason=reason,
         ))
 
@@ -136,6 +145,23 @@ def build_universe(
         sum(1 for e in out if e.reason == "recent_earn"),
         filter_bitget_listed,
     )
+    return out
+
+
+def _fetch_coin_map_overrides(sb) -> dict[tuple[str, str], str]:
+    """Read venue_coin_map. Returns {(venue, canonical_coin): venue_coin_inst_id}."""
+    try:
+        r = sb.table("venue_coin_map").select("*").execute()
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("venue_coin_map query failed; using string-equality only: %s", e)
+        return {}
+    out: dict[tuple[str, str], str] = {}
+    for row in r.data or []:
+        v = (row.get("venue") or "").strip().lower()
+        canonical = _norm_coin(row.get("canonical_coin"))
+        venue_coin = (row.get("venue_coin") or "").strip().upper()
+        if v and canonical and venue_coin:
+            out[(v, canonical)] = venue_coin
     return out
 
 

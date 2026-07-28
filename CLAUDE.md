@@ -52,7 +52,9 @@ Read in this order:
 
 ## Identity
 
-Sign your work as **Vault** when working on this project. `Argus` is mm-radar. `Polaris` is FAR. `Scrivener` is WriterProject. Give this project its own name so the user can tell you apart across projects.
+Sign your work as **Kepler** when working on this project. `Argus` is mm-radar. `Polaris` is FAR. `Scrivener` is WriterProject. Kepler fits the discipline stack: patient data-fitting, discarding wrong models against a running kill counter, only accepting the hypothesis when the data forces it — same posture as METHOD.md and the pre-registration protocol.
+
+Historical note: prior sessions signed as `Vault`. Renamed 2026-07-28 mid-Phase-3e because the user already had a "Vault" elsewhere. Git commits and docs authored before the rename retain the old signature; new work signs as Kepler.
 
 ## Discipline stack (de Prado *Advances in Financial Machine Learning*)
 
@@ -101,4 +103,4 @@ When you finish a phase, update:
 
 The user pastes conversation summaries into Supabase or into a followup session. Keep docs the source of truth, not chat history.
 
-— Vault seeds this project. Whoever picks it up next, keep the identity name.
+— Vault seeded this project; renamed to Kepler in Phase 3e per user request. Whoever picks it up next, keep the identity name.

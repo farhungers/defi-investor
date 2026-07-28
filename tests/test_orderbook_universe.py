@@ -163,6 +163,39 @@ def test_empty_result_when_no_earn_data():
     assert u == []
 
 
+def test_coin_map_override_replaces_default_inst_id():
+    # earn '1000CAT' should map to Bitget '1000CATSUSDT' via venue_coin_map
+    client = _FakeClient({
+        "earn_events": [
+            {"coin_name": "1000CAT", "sold_out": False, "last_seen_at": RECENT_ISO},
+        ],
+        "bitget_listings": [{"coin_name": "1000CAT", "status": "online"}],
+    })
+    overrides = {("bitget", "1000CAT"): "1000CATSUSDT"}
+    u = build_universe(client, now_utc=NOW, coin_map_overrides=overrides)
+    assert len(u) == 1
+    assert u[0].bitget_inst_id == "1000CATSUSDT"
+    # Binance had no override → default string-equality
+    assert u[0].binance_inst_id == "1000CATUSDT"
+
+
+def test_coin_map_override_only_applies_to_named_venue():
+    # An override for bitget shouldn't leak into the binance inst_id.
+    client = _FakeClient({
+        "earn_events": [
+            {"coin_name": "PEPE", "sold_out": False, "last_seen_at": RECENT_ISO},
+        ],
+        "bitget_listings": [{"coin_name": "PEPE", "status": "online"}],
+    })
+    overrides = {
+        ("bitget", "PEPE"): "1000PEPEUSDT",
+        ("binance", "PEPE"): "PEPEUSDT",
+    }
+    u = build_universe(client, now_utc=NOW, coin_map_overrides=overrides)
+    assert u[0].bitget_inst_id == "1000PEPEUSDT"
+    assert u[0].binance_inst_id == "PEPEUSDT"
+
+
 def test_empty_bitget_listings_falls_back_to_no_filter():
     # If bitget_listings has zero online rows, the filter is skipped
     # rather than dropping every coin (regression guard against the
