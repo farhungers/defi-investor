@@ -12,6 +12,7 @@ dependencies = [
     "supabase>=2.5",
     "python-dotenv>=1.0",
     "pandas>=2.2",
+    "websockets>=13.0",
 ]
 
 [project.optional-dependencies]

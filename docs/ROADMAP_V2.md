@@ -96,14 +96,23 @@ The pre-registered infrastructure that gates depend on.
 
 **Adjustment trigger**: if triple-barrier produces wildly different labels than fixed-horizon on same events, don't touch either — investigate whether it's a labeler bug vs a legitimate methodological difference (deep-read AFML Ch 3 if needed).
 
-### Phase 3e — Order-book channel (~2-3 weeks, parallel with Phase 3d if capacity allows)
-The A3 hypothesis. Different signal channel. Only start if Phase 3d isn't at risk.
+### Phase 3e — Order-book channel (~2-3 weeks) — DESIGN + PROTOTYPE
+The A3 hypothesis. Different signal channel. Different runtime model.
 
-- [ ] `HYPOTHESIS_A3.md` + `A3.yaml` — order-book impact hypothesis
-- [ ] L2 order-book scraper (Bitget + Binance WS free streams)
-- [ ] Storage layer for order-book snapshots (may need new table; consider retention TTL)
-- [ ] Order-book impact labeler
-- [ ] Extend gate report to accommodate A3 with its own kill-counter slot
+- [x] `HYPOTHESIS_A3.md` + `A3.yaml` — order-book impact hypothesis (done in Phase 3b)
+- [x] Design doc — `docs/ORDERBOOK_DESIGN.md` covers deploy options, storage volume, universe scoping, data model, feature spec, retention, build plan
+- [x] Bitget spot L2 WS client prototype (`src/defi_investor/orderbook/bitget_l2.py`) — subscribes to `books5`, verified live: ~10 snapshots/sec BTCUSDT, auto-reconnect with exponential backoff, ping/pong keepalive. Locally runnable via `python -m defi_investor.orderbook.bitget_l2 BTCUSDT ETHUSDT`.
+- [x] `websockets>=13.0` added to pyproject dependencies
+- [ ] Binance spot L2 WS client (mirror of Bitget shape)
+- [ ] Storage: async batched inserts to Supabase, backpressure-aware
+- [ ] Migration 010: `orderbook_snapshots_l2` + `orderbook_features` tables
+- [ ] Universe manager (daily refresh of tracked coins from `earn_events`)
+- [ ] Feature extractor (`depth_asymmetry_5min` per A3 spec)
+- [ ] A3 backfill (parallel to backfill_labels_v030 for A2b)
+- [ ] A3 gate report (t-test per A3 spec, sibling to gate_report_a2b)
+- [ ] Retention policy (nightly TTL prune of raw snapshots)
+
+**BLOCKED on user decision**: deploy target for the persistent WS runner. GH Actions cron is inappropriate (5-min timeout, cron re-runs would reopen). Options per design doc: (A) user's own always-on machine, (B) free-tier cloud, (C) paid VPS ($4-6/mo). Recommend: (A) for prototype validation, then (B) or (C) before A3 gate date 2026-11-30.
 
 **Adjustment trigger**: if free WS streams drop connections frequently or require paid tier for reliability, defer A3 entirely and requeue for a Phase 4.
 
@@ -146,3 +155,4 @@ Weekly self-check: run through the adjustment triggers list above. If any is tri
 | 2026-07-28 | Phase 3d labeler | v0.3.0 triple-barrier labeler shipped as `defi_investor.labelers.triple_barrier_v030`. Multiplicative barriers on sigma_20d per A2b spec, multi-horizon returns, 9 offline tests. 242/242 total. |
 | 2026-07-28 | Phase 3d backfill | `scripts/backfill_labels_v030.py` written; iterates sold-out events across both venues, writes 3 rows per event (one per horizon) using labeler_version suffix trick to keep composite PK intact; production has 9 sold-out events pending. Not yet run against production. |
 | 2026-07-28 | Phase 3d gate | Holm-Bonferroni helper + A2b gate report shipped. `family_wise.N_REGISTERED=3` tracks KILL_COUNTER.md. A2b gate uses binomial test per horizon. 252/252 tests. Report runs today (descriptive until labels exist). |
+| 2026-07-28 | Phase 3e prototype | Bitget spot L2 WS client verified live (~10 snapshots/sec). Design doc `docs/ORDERBOOK_DESIGN.md` covers deploy options, storage volume, universe scoping, feature spec. Blocked on user decision for deploy target (local vs cloud). |
