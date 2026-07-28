@@ -108,9 +108,10 @@ The A3 hypothesis. Different signal channel. Different runtime model.
 - [x] `L2Snapshot` promoted to `orderbook/__init__.py` — shared shape across venues
 - [x] Binance spot L2 WS client (`src/defi_investor/orderbook/binance_l2.py`) — combined-stream `<symbol>@depth5@100ms`, live-verified ~10 snapshots/sec BTCUSDT, same runtime shape as Bitget (drop-in interchangeable)
 - [x] Storage: `BatchedL2Writer` (`src/defi_investor/orderbook/storage.py`) — async queue, 500-row batches or 2s interval, drop-oldest backpressure at 100k queue depth, error-resilient (single flush failure logged and reported, loop continues), sync Supabase upsert wrapped in `asyncio.to_thread`. 7 tests: batch/time flush, drop-oldest, error resilience, final drain on stop, row shape.
+- [x] Universe manager (`src/defi_investor/orderbook/universe.py`) — union of active-earn + recent-earn (30d), Bitget-listings filter with empty-table fallback. 10 tests. Live-verified 541 coins.
+- [x] L2 capture daemon (`src/defi_investor/orderbook/capture_daemon.py`) — starts writer, spawns Bitget + Binance WS batches (Bitget 40/msg cap, Binance 150 streams/URL cap), periodic combined stats logging. `--max-symbols` cap, `--dry-run` flag, `--venues` filter. Live-verified end-to-end in dry-run mode.
 - [ ] Apply Migration 010 to Supabase (**user greenlight; wait until we're ready to store data**)
-- [ ] Universe manager (daily refresh of tracked coins from `earn_events`)
-- [ ] L2 capture daemon (glue: universe → WS clients → BatchedL2Writer → Supabase)
+- [ ] Coin-name mapping between earn_events and Bitget/Binance spot inst_ids (some divergence observed: earn `1000CAT` vs Bitget spot `1000CATS`). Populate `venue_coin_map` via a scraper against Bitget's `/spot/public/symbols` and Binance's `/api/v3/exchangeInfo`.
 - [ ] A3 backfill (parallel to backfill_labels_v030 for A2b)
 - [ ] A3 gate report (t-test per A3 spec, sibling to gate_report_a2b)
 - [ ] Retention policy (nightly TTL prune of raw snapshots)
@@ -162,3 +163,4 @@ Weekly self-check: run through the adjustment triggers list above. If any is tri
 | 2026-07-28 | Phase 3e feature+schema | `compute_depth_asymmetry_5min` shipped as pure function over L2 snapshot iterables (12 tests). Migration 010 drafted (`orderbook_snapshots_l2`, `orderbook_features`, `orderbook_universe`). 264/264. |
 | 2026-07-28 | Phase 3e Binance client | Binance spot L2 WS client live-verified. L2Snapshot promoted to shared shape. Both venues drop-in interchangeable — feature extractor works over either. 264/264. |
 | 2026-07-28 | Phase 3e storage layer | BatchedL2Writer shipped (async queue + 500-row/2s batching + drop-oldest backpressure). 271/271 tests. Ready to wire into a daemon. |
+| 2026-07-28 | Phase 3e daemon | Universe manager (541 live coins) + capture_daemon (`python -m defi_investor.orderbook.capture_daemon`) shipped. Empty-`bitget_listings` fallback bug caught + fixed in same iteration. Cross-venue coin-name mismatch observed (e.g. earn `1000CAT` vs Bitget spot `1000CATS`); `venue_coin_map` seeding queued. 281/281 tests. |
