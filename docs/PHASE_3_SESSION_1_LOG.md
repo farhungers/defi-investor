@@ -140,3 +140,53 @@ Session extended past the initial wrap for hardening + bug hunting + deploy plan
 - No pending user-blocked items EXCEPT the deploy-target decision (Task #12)
 
 Next session should start with the `gm` trigger routine per `memory/feedback_gm_trigger.md`. First action: check Task #12 and either resolve the deploy choice or proceed with other Phase 3 work (waiting for data accumulation).
+
+---
+
+## Session addendum — 2026-07-29 (Kepler)
+
+### Commit `7c0cc6e` — candles.py spot-fallback fix + gitignore widening
+- Shipped the uncommitted `candles.py` fix that follows through on the `0f641b4` diagnostic. Spot returns 8 columns (extra `usdt_vol`) vs perp's 7; `_to_frame` now trims to the first 7. Docstring updated.
+- Widened `.gitignore` `data/events/*.jsonl` to `data/events/**/*.jsonl` so venue subdirs (Binance events file was untracked all session) stay ignored.
+- 295/295 tests. Pushed to origin + backup.
+
+### Backfill run — v0.3.0 labeler on 9 sold-out events (fired live 2026-07-29 15:00 UTC)
+
+Ran `scripts/backfill_labels_v030.py`. Stats:
+```
+labeled_events: 0, labeled_rows: 0, unlabelable_rows: 27
+stale_anchor: 2, skipped_existing: 0
+labels: {1: 0, -1: 0, 0: 0}
+by_horizon: {24: unlabelable=9, 48: unlabelable=9, 168: unlabelable=9}
+```
+
+All 27 rows landed in `earn_event_labels` with `unlabelable_reason='anchor_before_first_walk_bar'`. Total v0.3.0 rows in prod: 33 (27 new + 6 from a prior small run under the same reason).
+
+**Diagnosis (verified with a manual Bitget probe, not hypothesized):**
+- The 1m mix-candles endpoint DOES have data around the anchor (SUSHIUSDT probed at anchor=2026-07-09 18:52 UTC returned 200 bars from 19:33→22:52 — 41 minutes AFTER the anchor). Retention is not the issue.
+- Root cause: **Bitget's 1m endpoint appears to return the newest ~200 bars within `[startTime, endTime]`, ignoring `startTime` and paging backward toward it — but the labeler's `fetch_candles` pages FORWARD from `startTime`.** Result: the first page skips the entire early window (including anchor), and subsequent pages are past-anchor bars only. `walk_df.index <= anchor_ts` is empty → all horizons emit `anchor_before_first_walk_bar`.
+- Backfill log confirms only 2 pages were issued for SUSHIUSDT (first: startTime=2026-07-09 18:56, second: startTime=2026-07-16 22:37 — the second page starts where the first ended, but the first page's actual data was far past its requested start).
+
+**What this means:**
+- The v0.3.0 labeler is currently unable to label ANY event from a `startTime` more than a few 200-bar-windows in the past on 1m granularity.
+- Not a labeler-logic issue, not a spec issue — it's the fetcher's paging assumption breaking against a Bitget quirk.
+- Fix scope belongs in `src/defi_investor/candles.py` fetcher (or a labeler-side adjustment: fetch coarser walk granularity for stale anchors, then step down near the barrier crossing). Both are non-trivial and would benefit from a fresh session; **Second Law forbids me from iterating this session** to make labels start showing up.
+
+**What NOT to do next session:**
+- Do not "tune k" or "widen horizons" to squeeze labels out. The reason is mechanical, not statistical.
+- Do not re-run the backfill hoping for different results. It is deterministic-unlabelable until the fetcher is fixed.
+
+**What to do next session:**
+1. Fix `fetch_candles` paging to actually cover the requested `[startTime, endTime]` when Bitget's 1m endpoint skips ahead. Likely: probe the first page, if `first_bar > startTime + tolerance`, issue a bounded-window request with a moved `endTime` to force older data.
+2. Add a unit test with a fake Bitget response that reproduces the skip-ahead behavior.
+3. Re-run the backfill; the 33 unlabelable rows will be overwritten via upsert.
+
+### Task-log state at addendum close
+
+Two of four proposed tasks addressed:
+- **#1 done** — candles.py fix shipped (`7c0cc6e`).
+- **#2 fired but produced 0 labeled rows** — real finding logged above; work continues via the "next session" list above rather than a re-fire.
+- **#3 pending** — user has not yet chosen A/B/C.
+- **#4 pending** — blocked on #3.
+
+Working tree still clean after addendum (this doc + no code changes).
