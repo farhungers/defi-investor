@@ -8,9 +8,19 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 
 **Do not touch mm-radar from this project.** Sibling. Different discipline stack.
 
-## Current state (as of 2026-07-28, Phase 3 Session wrap)
+## Current state (as of 2026-07-29, Session 4 wrap)
 
-**Phase: 3c LIVE + 3d code-complete + 3e code-surface-complete + Migration 010 APPLIED.** 295/295 tests. `main` at `ad18222`, pushed to origin+backup. Working tree clean. Extended session addendum in `docs/PHASE_3_SESSION_1_LOG.md` covers 7 additional commits with 5 real bugs fixed post-code-complete.
+**Phase: 3c LIVE + 3d code-complete + 3e code-surface-complete + Migration 010 NOT YET APPLIED (blocked on user deploy-target decision).** 298/298 tests. `main` at `c5de173`, pushed to origin+backup. Working tree clean.
+
+**Session 4 output (2026-07-29):** 4 commits.
+- `7c0cc6e` — candles.py spot-fallback shape bug fix (spot returns 8 cols vs perp 7; `_to_frame` now trims to 7). Also widened `.gitignore` to `data/events/**/*.jsonl` for venue subdirs.
+- `67491f3` — A2b backfill fired live: 27/27 unlabelable with `anchor_before_first_walk_bar`. Verified via direct Bitget probe: retention is NOT the issue; root cause is that Bitget's 1m mix-candles endpoint returns the newest-200 bars within a wide `[startTime, endTime]` window instead of paging forward from `startTime`. Fix belongs in `src/defi_investor/candles.py::fetch_candles`. **Second Law: NOT touched this session.**
+- `e9c28d5` — universe manager per-venue independence. Coins absent on a venue get `inst_id=None` (kept in universe if the other venue resolves) via `__ABSENT__:{coin}` sentinel in `venue_coin_map`. Capture_daemon filters None inst_ids. Seeder updated to write sentinel rows; NOT re-run against prod.
+- `c5de173` — ROADMAP_V2 housekeeping (retention script done, absent-coin done, dedupe A3-gate).
+
+**Memory updates this session (persisted, no commits):**
+- `reference_user_has_vm.md` — VM specs question pinned. Next `gm` opens with it directly, before proposing A/B/C.
+- `reference_github_tokens.md` — active-account drift observation logged. `gh auth switch` is machine-global; parallel-project switches to `arbabfar` cause 404 on push here. Fix: `gh auth status` before first push; if drifted, `gh auth switch -u farhungers && gh auth setup-git`.
 
 **Session 3 output (2026-07-28), sorted by phase:**
 
@@ -26,10 +36,10 @@ _Phase 3e — L2 order-book pipeline (code-surface-complete):_ `src/defi_investo
 
 _Housekeeping this session:_ Control-arm bug fix in `scripts/gate_report.py` (dead-code KeyError + n<2 guard). BGBTC parser drift fix (added `OnChainElite` to `LIST_DATA_BIZLINES`). Identity renamed Vault→Kepler mid-session per user.
 
-**Immediate next-session behavior:** Three user decisions pending (all noted at end of every recent commit):
-1. Push 8 commits to origin + backup.
-2. Run `scripts/backfill_labels_v030.py` live (9 events × 3 horizons; idempotent).
-3. Pick deploy target for `capture_daemon` (A local / B free cloud / C paid VPS $4-6/mo per `docs/ORDERBOOK_DESIGN.md`); then apply Migration 010 and start the daemon.
+**Immediate next-session behavior:**
+1. `gm` trigger routine — open with the VM specs question directly (per `memory/reference_user_has_vm.md`). If VM fits: use it. If not: A (local PC) / B (free-tier cloud, no Oracle) / C (paid VPS $4-6/mo). Once picked: apply Migration 010, start `capture_daemon`, re-run `scripts/seed_venue_coin_map.py` against prod to populate `__ABSENT__` rows.
+2. Fix `fetch_candles` paging: probe first page, if `first_bar > startTime + tolerance`, issue bounded-window request with a moved `endTime` to force older data. Add a unit test with a fake Bitget response that reproduces skip-ahead. Re-run `scripts/backfill_labels_v030.py`; the 33 existing unlabelable rows overwrite via upsert. **Do NOT tune k, do NOT rerun before the fix.**
+3. Before first push, run `gh auth status`; if active account isn't `farhungers`, run `gh auth switch -u farhungers && gh auth setup-git`.
 
 **Read these before doing anything:**
 - `docs/PHASE_3_SESSION_1_LOG.md` — this session's log (write it before closing).

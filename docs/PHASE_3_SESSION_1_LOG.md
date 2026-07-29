@@ -190,3 +190,40 @@ Two of four proposed tasks addressed:
 - **#4 pending** — blocked on #3.
 
 Working tree still clean after addendum (this doc + no code changes).
+
+### /loop follow-through (2026-07-29, later same day)
+
+User invoked `/loop` (dynamic mode, no interval) asking me to continue with the survey items I had proposed. Executed two more real changes plus doc housekeeping:
+
+**Commit `e9c28d5` — universe-manager per-venue independence**
+- Old semantics: coin not in `bitget_listings` → dropped from universe entirely, which also killed the Binance side.
+- New semantics: `bitget_inst_id` and `binance_inst_id` are decided independently. Unlisted-on-Bitget → `bitget_inst_id=None` (kept in universe if Binance side present). Coin absent on Binance → `binance_inst_id=None`. Entry dropped only when BOTH are None.
+- Sentinel encoded as `venue_coin_map.venue_coin = "__ABSENT__:{coin}"` — per-coin encoded because the composite PK `(venue, venue_coin)` cannot admit a shared bare sentinel across many absent coins. `_absent_marker(coin)` and `_is_absent(value)` helpers in `universe.py`.
+- `capture_daemon` filters None inst_ids before subscribing.
+- `seed_venue_coin_map` writes `__ABSENT__:{coin}` rows for coins with no venue counterpart (~123 Bitget-absent + ~119 Binance-absent per last live seeder run). Seeder NOT re-run against prod this session; a future session or user run will populate.
+- 2 existing tests updated (unlisted, offline → new keep-with-None semantics). 3 new tests: bitget sentinel, binance sentinel, drop-if-both-absent. 298/298 passing.
+
+**Commit `c5de173` — ROADMAP_V2 housekeeping**
+- Marked `scripts/cleanup_orderbook_snapshots.py` (shipped as `ad18222`) as done.
+- Marked venue-absent-coin fix as done.
+- Removed the duplicate A3-gate-report bullet.
+- Added three revision-log rows: retention script, A2b backfill run, absent-coin fix.
+
+**Memory updates (persisted, no commits — files live outside repo)**
+- `reference_user_has_vm.md`: pinned the VM specs question so the next `gm` opens with it directly, before re-proposing the A/B/C deploy menu. User deferred the decision to next session.
+- `reference_github_tokens.md`: appended active-account drift observation. `gh auth switch` is machine-global; when another project switches to `arbabfar`/`farhadmaildari-lang`, git push here returns 404 (not 401 — GitHub disguises wrong-account access to private repos). Fix: run `gh auth status` before the first push in any session; if drifted, `gh auth switch -u farhungers && gh auth setup-git`.
+
+### Observed gh auth drift (2026-07-29)
+Mid-`/loop`, git push suddenly returned `remote: Repository not found` on both `origin` and `backup`. Diagnosed via `gh auth status`: active account had drifted from `farhungers` (memory rule) to `arbabfar` (probably because user's parallel work in another project switched it). Recovered with `gh auth switch -u farhungers && gh auth setup-git`; pushes resumed. Now pinned to memory so next-session-me checks preemptively.
+
+### State at session-close (2026-07-29)
+- 4 commits this session: `7c0cc6e`, `67491f3`, `e9c28d5`, `c5de173`
+- `main` at `c5de173`, pushed to origin + backup (both at same SHA)
+- Working tree clean
+- 298/298 tests
+- Two memory files updated in-place
+
+### What next session picks up
+1. **User answers the VM specs question** (opens `gm` → gate the A/B/C menu behind it).
+2. Fix `fetch_candles` paging (blocked by Second Law until this session ends; explicit "no re-run, no k-tuning" callouts above).
+3. Once deploy target picked: apply Migration 010, start `capture_daemon`, re-run `seed_venue_coin_map` against prod to populate the `__ABSENT__` rows.
