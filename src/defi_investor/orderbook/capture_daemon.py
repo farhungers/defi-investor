@@ -138,8 +138,14 @@ async def _run(
         LOG.info("capping universe from %d to %d symbols", len(universe), max_symbols)
         universe = universe[:max_symbols]
 
-    bitget_ids = [e.bitget_inst_id for e in universe] if "bitget" in venues else []
-    binance_ids = [e.binance_inst_id for e in universe] if "binance" in venues else []
+    bitget_ids = (
+        [e.bitget_inst_id for e in universe if e.bitget_inst_id]
+        if "bitget" in venues else []
+    )
+    binance_ids = (
+        [e.binance_inst_id for e in universe if e.binance_inst_id]
+        if "binance" in venues else []
+    )
 
     LOG.info(
         "daemon start: %d bitget, %d binance, dry_run=%s",

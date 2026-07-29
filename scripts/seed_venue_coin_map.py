@@ -38,6 +38,8 @@ import httpx
 from dotenv import load_dotenv
 from supabase import create_client
 
+from defi_investor.orderbook.universe import _absent_marker
+
 
 LOG = logging.getLogger("defi_investor.seed_venue_coin_map")
 
@@ -178,6 +180,12 @@ def main() -> int:
         bitget_inst = _resolve_inst_id(coin, bitget_map)
         if bitget_inst is None:
             stats["bitget_absent"] += 1
+            to_upsert.append({
+                "canonical_coin": coin,
+                "venue": "bitget",
+                "venue_coin": _absent_marker(coin),
+                "notes": f"no bitget spot counterpart for earn coin={coin}",
+            })
         elif bitget_inst == f"{coin}{QUOTE}":
             stats["bitget_direct"] += 1
             # No row needed — string equality already works. Skip upsert.
@@ -194,6 +202,12 @@ def main() -> int:
         binance_inst = _resolve_inst_id(coin, binance_map)
         if binance_inst is None:
             stats["binance_absent"] += 1
+            to_upsert.append({
+                "canonical_coin": coin,
+                "venue": "binance",
+                "venue_coin": _absent_marker(coin),
+                "notes": f"no binance spot counterpart for earn coin={coin}",
+            })
         elif binance_inst == f"{coin}{QUOTE}":
             stats["binance_direct"] += 1
         else:

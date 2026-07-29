@@ -30,6 +30,24 @@ LOG = logging.getLogger("defi_investor.orderbook.universe")
 RECENT_WINDOW_DAYS = 30
 DEFAULT_QUOTE = "USDT"
 
+# Sentinel prefix stored in `venue_coin_map.venue_coin` to record that a
+# canonical coin has NO counterpart on that venue. Full stored value is
+# `f"{ABSENT_SENTINEL_PREFIX}{coin}"` per row so the composite PK
+# (venue, venue_coin) admits many absent rows per venue. The daemon reads
+# any value with this prefix as inst_id=None and skips that venue for the
+# coin. Prefix chosen to be visibly non-symbol (leading underscores,
+# won't collide with any real spot symbol on either venue).
+ABSENT_SENTINEL_PREFIX = "__ABSENT__:"
+
+
+def _absent_marker(coin: str) -> str:
+    """Encode `venue_coin` value that marks a coin as absent on the venue."""
+    return f"{ABSENT_SENTINEL_PREFIX}{coin.upper().strip()}"
+
+
+def _is_absent(value: Optional[str]) -> bool:
+    return bool(value) and value.startswith(ABSENT_SENTINEL_PREFIX)
+
 
 @dataclass(frozen=True)
 class UniverseEntry:
@@ -127,10 +145,26 @@ def build_universe(
     all_coins = {**active_earn, **recent_earn}
     out: list[UniverseEntry] = []
     for coin, reason in sorted(all_coins.items()):
-        if bitget_listed is not None and coin not in bitget_listed:
+        # Bitget: sentinel override wins; else listing check; else default symbol
+        bitget_override = coin_map_overrides.get(("bitget", coin))
+        if _is_absent(bitget_override):
+            bitget_inst = None
+        elif bitget_listed is not None and coin not in bitget_listed:
+            bitget_inst = None
+        else:
+            bitget_inst = bitget_override or f"{coin}{quote}"
+
+        # Binance: only sentinel override signals absence (no listings table)
+        binance_override = coin_map_overrides.get(("binance", coin))
+        if _is_absent(binance_override):
+            binance_inst = None
+        else:
+            binance_inst = binance_override or f"{coin}{quote}"
+
+        # No venue to subscribe on → drop entirely
+        if bitget_inst is None and binance_inst is None:
             continue
-        bitget_inst = coin_map_overrides.get(("bitget", coin), f"{coin}{quote}")
-        binance_inst = coin_map_overrides.get(("binance", coin), f"{coin}{quote}")
+
         out.append(UniverseEntry(
             coin_name=coin,
             bitget_inst_id=bitget_inst,

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from defi_investor.orderbook.universe import build_universe
+from defi_investor.orderbook.universe import _absent_marker, build_universe
 
 
 class _FakeExec:
@@ -100,7 +100,10 @@ def test_old_earn_only_excluded():
     assert u == []
 
 
-def test_bitget_listing_filter_drops_unlisted():
+def test_bitget_unlisted_sets_inst_id_none_but_keeps_binance_side():
+    # New semantics (2026-07-29): unlisted-on-Bitget no longer drops the
+    # coin from the universe entirely. It sets bitget_inst_id=None so the
+    # daemon skips Bitget for this coin but still subscribes on Binance.
     client = _FakeClient({
         "earn_events": [
             {"coin_name": "GHOST", "sold_out": False, "last_seen_at": RECENT_ISO},
@@ -109,9 +112,12 @@ def test_bitget_listing_filter_drops_unlisted():
         "bitget_listings": [{"coin_name": "BTC", "status": "online"}],
     })
     u = build_universe(client, now_utc=NOW)
-    coins = [e.coin_name for e in u]
-    assert "BTC" in coins
-    assert "GHOST" not in coins
+    by_coin = {e.coin_name: e for e in u}
+    assert set(by_coin) == {"BTC", "GHOST"}
+    assert by_coin["BTC"].bitget_inst_id == "BTCUSDT"
+    assert by_coin["BTC"].binance_inst_id == "BTCUSDT"
+    assert by_coin["GHOST"].bitget_inst_id is None
+    assert by_coin["GHOST"].binance_inst_id == "GHOSTUSDT"
 
 
 def test_bitget_listing_filter_off_keeps_all():
@@ -138,10 +144,11 @@ def test_coin_name_normalized_uppercase():
     assert u[0].coin_name == "USDC"
 
 
-def test_offline_listing_status_excludes_when_online_set_nonempty():
-    # When at least one online listing exists, offline coins are dropped.
-    # If ALL listings are offline (0 online), the fallback kicks in and
-    # the filter is skipped — see test_empty_bitget_listings_falls_back_to_no_filter.
+def test_offline_listing_sets_bitget_inst_none_but_keeps_binance_side():
+    # New semantics (2026-07-29): offline-on-Bitget maps to
+    # bitget_inst_id=None. The coin stays in the universe if Binance side
+    # still resolves (default string-equality), matching the same
+    # per-venue-independence rule as unlisted coins.
     client = _FakeClient({
         "earn_events": [
             {"coin_name": "OLD", "sold_out": False, "last_seen_at": RECENT_ISO},
@@ -153,8 +160,10 @@ def test_offline_listing_status_excludes_when_online_set_nonempty():
         ],
     })
     u = build_universe(client, now_utc=NOW)
-    coins = [e.coin_name for e in u]
-    assert coins == ["BTC"]
+    by_coin = {e.coin_name: e for e in u}
+    assert set(by_coin) == {"BTC", "OLD"}
+    assert by_coin["OLD"].bitget_inst_id is None
+    assert by_coin["OLD"].binance_inst_id == "OLDUSDT"
 
 
 def test_empty_result_when_no_earn_data():
@@ -194,6 +203,61 @@ def test_coin_map_override_only_applies_to_named_venue():
     u = build_universe(client, now_utc=NOW, coin_map_overrides=overrides)
     assert u[0].bitget_inst_id == "1000PEPEUSDT"
     assert u[0].binance_inst_id == "PEPEUSDT"
+
+
+def test_absent_sentinel_bitget_sets_inst_id_none():
+    # A venue_coin_map row with the absent-sentinel prefix must map to
+    # bitget_inst_id=None (per-coin encoded so many absents can coexist
+    # under the (venue, venue_coin) composite PK).
+    client = _FakeClient({
+        "earn_events": [
+            {"coin_name": "EARNONLY", "sold_out": False, "last_seen_at": RECENT_ISO},
+        ],
+        "bitget_listings": [{"coin_name": "EARNONLY", "status": "online"}],
+    })
+    overrides = {("bitget", "EARNONLY"): _absent_marker("EARNONLY")}
+    u = build_universe(client, now_utc=NOW, coin_map_overrides=overrides)
+    assert len(u) == 1
+    assert u[0].bitget_inst_id is None
+    assert u[0].binance_inst_id == "EARNONLYUSDT"
+
+
+def test_absent_sentinel_binance_sets_inst_id_none():
+    # Binance has no listings table, so absence is only signalled via the
+    # venue_coin_map sentinel.
+    client = _FakeClient({
+        "earn_events": [
+            {"coin_name": "BITONLY", "sold_out": False, "last_seen_at": RECENT_ISO},
+        ],
+        "bitget_listings": [{"coin_name": "BITONLY", "status": "online"}],
+    })
+    overrides = {("binance", "BITONLY"): _absent_marker("BITONLY")}
+    u = build_universe(client, now_utc=NOW, coin_map_overrides=overrides)
+    assert len(u) == 1
+    assert u[0].bitget_inst_id == "BITONLYUSDT"
+    assert u[0].binance_inst_id is None
+
+
+def test_absent_on_both_venues_drops_entry():
+    # If a coin has no counterpart on either venue, the entry has no
+    # subscription target and should not appear in the universe at all.
+    client = _FakeClient({
+        "earn_events": [
+            {"coin_name": "NOWHERE", "sold_out": False, "last_seen_at": RECENT_ISO},
+            {"coin_name": "BTC", "sold_out": False, "last_seen_at": RECENT_ISO},
+        ],
+        "bitget_listings": [
+            {"coin_name": "BTC", "status": "online"},
+            {"coin_name": "NOWHERE", "status": "online"},
+        ],
+    })
+    overrides = {
+        ("bitget", "NOWHERE"): _absent_marker("NOWHERE"),
+        ("binance", "NOWHERE"): _absent_marker("NOWHERE"),
+    }
+    u = build_universe(client, now_utc=NOW, coin_map_overrides=overrides)
+    coins = {e.coin_name for e in u}
+    assert coins == {"BTC"}
 
 
 def test_empty_bitget_listings_falls_back_to_no_filter():
