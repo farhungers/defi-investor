@@ -14,7 +14,11 @@ Endpoint (verified 2026-07-10):
 Response shape:
 
     {"code":"00000","msg":"success","requestTime":...,
-     "data":[[ts_ms_str, o, h, l, c, base_vol, quote_vol], ...]}
+     "data":[[ts_ms_str, o, h, l, c, base_vol, quote_vol, ...], ...]}
+
+Perp returns 7 columns. Spot returns 8 columns (adds usdt_vol as an 8th
+field, which for USDT-quoted pairs is identical to quote_vol). Any
+trailing columns are dropped by `_to_frame`.
 
 All numeric fields are STRINGS on the wire. `data` is sorted oldest-first.
 
@@ -72,7 +76,10 @@ def _to_frame(rows: list) -> pd.DataFrame:
     """Convert Bitget's list-of-lists into a numeric OHLCV DataFrame."""
     if not rows:
         return pd.DataFrame(columns=["open", "high", "low", "close", "base_vol", "quote_vol"])
-    df = pd.DataFrame(rows, columns=[
+    # Spot returns 8 cols (adds usdt_vol), perp returns 7. Drop any trailing
+    # columns beyond the 7 we consume so both endpoints share one shape.
+    trimmed = [row[:7] for row in rows]
+    df = pd.DataFrame(trimmed, columns=[
         "ts_ms", "open", "high", "low", "close", "base_vol", "quote_vol",
     ])
     df["ts"] = pd.to_datetime(df["ts_ms"].astype("int64"), unit="ms", utc=True)

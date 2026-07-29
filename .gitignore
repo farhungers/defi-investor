@@ -15,6 +15,7 @@ reaserch/
 
 # Derived catalog is optional to commit; keep local by default
 data/events/*.jsonl
+data/events/**/*.jsonl
 !data/events/.gitkeep
 
 # Python
