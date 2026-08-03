@@ -8,18 +8,39 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 
 **Do not touch mm-radar from this project.** Sibling. Different discipline stack.
 
-## Current state (as of 2026-08-03, Session 5 mid)
+## Current state (as of 2026-08-03, Session 5 wrap)
 
-**Phase: 3c LIVE + 3d LIVE (A2b labels landed) + 3e READY FOR VM DEPLOY (Migration 010 applied, daemon proven live).** 304/304 tests. `main` pushed through `b1342a4` to origin+backup; Migration 010 doc bump pending commit.
+**Phase: 3c LIVE + 3d LIVE (18 A2b labels in prod) + 3e READY FOR VM DEPLOY (Migration 010 applied, daemon fix live, seeder re-run).** 304/304 tests. `main` at `456b12a`, pushed to origin+backup at the same SHA. Working tree clean (session log this commit).
 
-**Session 5 output (2026-08-03) so far:** 1 commit + docs.
-- `a228be3` — candles.py two-phase fetcher (forward walk unchanged, then backward-fill on skip-ahead), fixes root cause of 2026-07-29 A2b unlabelable-27. `_already_labeled` latent-bug also fixed (was checking `eq("0.3.0")` but rows are `0.3.0#h24`). Added `--retry-unlabelable` flag. 2 new regression tests. 300/300.
-- A2b backfill re-fired live: **6 labeled events × 3 horizons = 18 labeled rows**, 0 unlabelable, 0 skipped, 2 stale_anchor. Split `{+1: 3, -1: 1, 0: 14}`. Not iterating on this split (Second Law).
-- VM specs confirmed with user: Linux, Py 3.11+, always-on, RAM OK, disk under 2GB but daemon writes to Supabase not local so that's fine. VM is the deploy target for capture_daemon.
+**Session 5 output (2026-08-03):** 6 commits.
+- `a228be3` — candles.py two-phase fetcher (forward walk unchanged, then backward-fill on 1m skip-ahead). Fixes root cause of Session 4's A2b unlabelable-27. `_already_labeled` latent-bug also fixed (was checking `eq("0.3.0")` but stored rows are `0.3.0#h24`). Added `--retry-unlabelable` flag. 2 new regression tests. 300/300.
+- `ef9aba3` — docs: A2b backfill re-fired live, **6 events × 3 horizons = 18 labeled rows**, 0 unlabelable, 2 stale_anchor. Split `{+1: 3, -1: 1, 0: 14}`. Not iterating (Second Law).
+- `b60a525` — `scripts/seed_venue_coin_map.py` re-fired against prod: 250 rows, 247 `__ABSENT__` sentinels populated. capture_daemon now correctly skips venue-absent coins.
+- `99d193c` — `capture_daemon` bug fix: was capping `--max-symbols` before applying `--venues` filter, so `--venues bitget --max-symbols 3` yielded 0 subs when top-3 entries were Bitget-absent. Extracted `_select_universe` pure helper (filter then cap). 4 new regression tests. 304/304. Re-smoke live confirmed 3 Bitget subs + acks.
+- `b1342a4` — roadmap row for daemon fix.
+- `456b12a` — Migration 010 applied to Supabase (comment-stripped variant — editor rejected the `--` line containing `|`). Three tables verified empty via smoke: `orderbook_snapshots_l2`, `orderbook_features`, `orderbook_universe`.
 
-**Blocking on user for the rest of Session 5:**
-1. Migration 010 paste into Supabase SQL editor (contents: `db/migrations/010_orderbook.sql`). No direct psql path in `.env` — same manual workflow as Migration 009.
-2. Push confirmation (unpushed commit `a228be3`).
+**Memory updates this session (persisted, no commits):**
+- `reference_user_has_vm.md` — rewrote with confirmed specs (Linux Py 3.11+, always-on, RAM 300-1000 MB, disk under 2GB but daemon writes to Supabase so OK). Removed the "ask before A/B/C" gate. Added flag about Supabase-quota concern before scaling past ~10 symbols.
+- `MEMORY.md` — index one-liner refreshed to match.
+
+**Session 5 gh-auth drift caught pre-push again.** Active was `arbabfar`; recovered via `gh auth switch -u farhungers && gh auth setup-git`. Memory rule earned its keep on first invocation.
+
+**Immediate next-session behavior:**
+1. **Launch `capture_daemon` on user's VM at 5-symbol pilot.** Command: `python -m defi_investor.orderbook.capture_daemon --venues bitget,binance --max-symbols 5`. Then watch `l2 writer stats:` land in Supabase. `scripts/cleanup_orderbook_snapshots.py` should run within 24h of first data.
+2. Once even a few snapshots exist, run `scripts/gate_report_a3.py` to smoke the A3 pipeline. Do NOT interpret numbers before n≥30.
+3. Storage-quota decision before scaling past ~10 symbols (10 GB/day raw at 50 symbols vs 500 MB free tier).
+4. Do NOT run `gate_report_a2b.py` — n=6 events, gate pre-committed to 2026-09-30 or n≥30.
+
+**Read these before doing anything (unchanged since Session 4):**
+- `docs/PHASE_3_SESSION_2_LOG.md` — Session 5 log (this session).
+- `docs/PHASE_3_SESSION_1_LOG.md` — Session 4 log (includes the fetcher-bug diagnosis).
+- `docs/ROADMAP_V2.md` — current phase plan with adjustment triggers.
+- `docs/preregistrations/README.md` and `KILL_COUNTER.md` — the discipline layer.
+- `docs/METHOD.md` — confounds, gates, sign conventions.
+- `docs/CHARTER.md` — kill criteria + scope.
+- `docs/ORDERBOOK_DESIGN.md` — Phase 3e design + storage-volume math.
+- Memory: `feedback_no_borrowing_from_siblings.md`, `feedback_no_premature_signals.md`, `feedback_gm_trigger.md`, `user_kepler_identity.md`, `reference_user_has_vm.md`. Non-negotiable.
 
 **Prior state (as of 2026-07-29, Session 4 wrap):**
 
