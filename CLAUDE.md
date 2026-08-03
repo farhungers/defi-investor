@@ -8,9 +8,22 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 
 **Do not touch mm-radar from this project.** Sibling. Different discipline stack.
 
-## Current state (as of 2026-07-29, Session 4 wrap)
+## Current state (as of 2026-08-03, Session 5 mid)
 
-**Phase: 3c LIVE + 3d code-complete + 3e code-surface-complete + Migration 010 NOT YET APPLIED (blocked on user deploy-target decision).** 298/298 tests. `main` at `c5de173`, pushed to origin+backup. Working tree clean.
+**Phase: 3c LIVE + 3d LIVE (A2b labels landed) + 3e code-surface-complete + Migration 010 awaiting user paste.** 300/300 tests. `main` at `a228be3` local (unpushed); working tree has ROADMAP_V2 + CLAUDE.md edits pending commit.
+
+**Session 5 output (2026-08-03) so far:** 1 commit + docs.
+- `a228be3` — candles.py two-phase fetcher (forward walk unchanged, then backward-fill on skip-ahead), fixes root cause of 2026-07-29 A2b unlabelable-27. `_already_labeled` latent-bug also fixed (was checking `eq("0.3.0")` but rows are `0.3.0#h24`). Added `--retry-unlabelable` flag. 2 new regression tests. 300/300.
+- A2b backfill re-fired live: **6 labeled events × 3 horizons = 18 labeled rows**, 0 unlabelable, 0 skipped, 2 stale_anchor. Split `{+1: 3, -1: 1, 0: 14}`. Not iterating on this split (Second Law).
+- VM specs confirmed with user: Linux, Py 3.11+, always-on, RAM OK, disk under 2GB but daemon writes to Supabase not local so that's fine. VM is the deploy target for capture_daemon.
+
+**Blocking on user for the rest of Session 5:**
+1. Migration 010 paste into Supabase SQL editor (contents: `db/migrations/010_orderbook.sql`). No direct psql path in `.env` — same manual workflow as Migration 009.
+2. Push confirmation (unpushed commit `a228be3`).
+
+**Prior state (as of 2026-07-29, Session 4 wrap):**
+
+Phase: 3c LIVE + 3d code-complete + 3e code-surface-complete + Migration 010 NOT YET APPLIED (blocked on user deploy-target decision). 298/298 tests. `main` at `c5de173`, pushed to origin+backup. Working tree clean.
 
 **Session 4 output (2026-07-29):** 4 commits.
 - `7c0cc6e` — candles.py spot-fallback shape bug fix (spot returns 8 cols vs perp 7; `_to_frame` now trims to 7). Also widened `.gitignore` to `data/events/**/*.jsonl` for venue subdirs.
