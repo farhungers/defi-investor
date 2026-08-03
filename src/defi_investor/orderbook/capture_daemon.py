@@ -68,6 +68,29 @@ def _chunks(seq: list, n: int):
         yield seq[i:i + n]
 
 
+def _select_universe(
+    entries: list[UniverseEntry],
+    venues: list[str],
+    max_symbols: Optional[int],
+) -> list[UniverseEntry]:
+    """Filter to entries that resolve to at least one requested venue, then cap.
+
+    Order matters: with ~247 coins __ABSENT__ on one venue as of 2026-08-03,
+    capping first would consume slots on entries whose only inst_id is on
+    the un-requested venue and yield zero subscriptions.
+    """
+    def _has_requested_venue(e: UniverseEntry) -> bool:
+        return bool(
+            ("bitget" in venues and e.bitget_inst_id)
+            or ("binance" in venues and e.binance_inst_id)
+        )
+    filtered = [e for e in entries if _has_requested_venue(e)]
+    if max_symbols is not None and len(filtered) > max_symbols:
+        LOG.info("capping universe from %d to %d symbols", len(filtered), max_symbols)
+        filtered = filtered[:max_symbols]
+    return filtered
+
+
 async def _run_bitget_batches(
     inst_ids: list[str],
     on_snapshot,
@@ -134,9 +157,7 @@ async def _run(
             UniverseEntry("ETH", "ETHUSDT", "ETHUSDT", "manual"),
         ]
 
-    if max_symbols is not None and len(universe) > max_symbols:
-        LOG.info("capping universe from %d to %d symbols", len(universe), max_symbols)
-        universe = universe[:max_symbols]
+    universe = _select_universe(universe, venues, max_symbols)
 
     bitget_ids = (
         [e.bitget_inst_id for e in universe if e.bitget_inst_id]
