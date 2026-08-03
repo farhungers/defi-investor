@@ -10,7 +10,7 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 
 ## Current state (as of 2026-08-03, Session 5 mid)
 
-**Phase: 3c LIVE + 3d LIVE (A2b labels landed) + 3e code-surface-complete + Migration 010 awaiting user paste.** 300/300 tests. `main` at `a228be3` local (unpushed); working tree has ROADMAP_V2 + CLAUDE.md edits pending commit.
+**Phase: 3c LIVE + 3d LIVE (A2b labels landed) + 3e READY FOR VM DEPLOY (Migration 010 applied, daemon proven live).** 304/304 tests. `main` pushed through `b1342a4` to origin+backup; Migration 010 doc bump pending commit.
 
 **Session 5 output (2026-08-03) so far:** 1 commit + docs.
 - `a228be3` — candles.py two-phase fetcher (forward walk unchanged, then backward-fill on skip-ahead), fixes root cause of 2026-07-29 A2b unlabelable-27. `_already_labeled` latent-bug also fixed (was checking `eq("0.3.0")` but rows are `0.3.0#h24`). Added `--retry-unlabelable` flag. 2 new regression tests. 300/300.
