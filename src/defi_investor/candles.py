@@ -119,6 +119,34 @@ def _fetch_page(
     return body.get("data") or [], r.status_code, None
 
 
+# Granularity -> milliseconds. Used by the backward-fill tolerance in
+# _fetch_market. '1M' (monthly) is approximated at 30 days.
+_GRANULARITY_MS: dict[str, int] = {
+    "1m": 60_000,
+    "5m": 300_000,
+    "15m": 900_000,
+    "30m": 1_800_000,
+    "1H": 3_600_000,
+    "4H": 14_400_000,
+    "6H": 21_600_000,
+    "12H": 43_200_000,
+    "1D": 86_400_000,
+    "3D": 259_200_000,
+    "1W": 604_800_000,
+    "1M": 30 * 86_400_000,
+}
+
+
+def _granularity_to_ms(g: str) -> int:
+    return _GRANULARITY_MS.get(g, 60_000)
+
+
+# Hard cap on API round-trips per fetch to prevent runaway loops on weird
+# responses. A 168h (7d) 1m walk = ~51 pages; retention-limited walks bail
+# earlier via empty-response break. 250 gives room for both.
+_MAX_PAGES = 250
+
+
 def _fetch_market(
     url: str, *, symbol: str, granularity: str,
     start_ms: int, end_ms: int, product_type: Optional[str],
@@ -126,14 +154,30 @@ def _fetch_market(
 ) -> tuple[Optional[pd.DataFrame], int, Optional[str], int]:
     """Fetch across paginated windows. Returns (df, last_status, error, n_pages).
 
-    Bitget returns oldest-first per call. We page forward by advancing
-    start_ms past the last returned ts + one granularity step.
+    Two-phase strategy to cover Bitget's inconsistent paging behavior:
+
+    Phase 1 (forward walk): request [start_ms, end_ms], advance start past
+    the last returned ts. Works for oldest-first endpoints (4H perp etc.).
+
+    Phase 2 (backward fill): if Phase 1's earliest returned bar is far past
+    the requested start_ms (Bitget's 1m mix-candles endpoint empirically
+    returns the newest ~200 bars within a wide window, ignoring startTime),
+    walk backward by shrinking cursor_end to first_ts - 1 each iteration
+    until start_ms is reached or an empty response ends coverage.
+
+    Regression context: without Phase 2, all 27 sold-out events in the
+    2026-07-29 v0.3.0 A2b backfill labelled as anchor_before_first_walk_bar
+    because the fetcher's forward-walk assumption skipped past the anchor.
     """
-    all_rows: list = []
-    cursor = start_ms
+    granularity_ms = _granularity_to_ms(granularity)
+    tolerance_ms = granularity_ms * 2  # allow two-bar slop for API rounding
+    all_rows_by_ts: dict[int, list] = {}
     n_pages = 0
     last_status = 0
-    while cursor < end_ms:
+
+    # Phase 1: forward walk from start_ms.
+    cursor = start_ms
+    while cursor < end_ms and n_pages < _MAX_PAGES:
         rows, status, err = _fetch_page(
             url, symbol=symbol, granularity=granularity,
             start_ms=cursor, end_ms=end_ms,
@@ -145,15 +189,47 @@ def _fetch_market(
             return None, status, err, n_pages
         if not rows:
             break
-        all_rows.extend(rows)
-        # Advance cursor past the last bar's ts_ms so the next page picks up
-        # from the following candle. Bitget's ts is bar-open time.
-        last_ts_ms = int(rows[-1][0])
+        for row in rows:
+            all_rows_by_ts.setdefault(int(row[0]), row)
+        last_ts_ms = max(int(r[0]) for r in rows)
         if last_ts_ms + 1 <= cursor:
             break  # defensive: no forward progress
         cursor = last_ts_ms + 1
         if len(rows) < _PAGE_LIMIT:
             break  # last page
+
+    # Phase 2: backward fill if the earliest bar is past start_ms + tolerance.
+    if all_rows_by_ts:
+        min_ts = min(all_rows_by_ts)
+        if min_ts > start_ms + tolerance_ms:
+            cursor_end = min_ts - 1
+            while cursor_end > start_ms and n_pages < _MAX_PAGES:
+                rows, status, err = _fetch_page(
+                    url, symbol=symbol, granularity=granularity,
+                    start_ms=start_ms, end_ms=cursor_end,
+                    product_type=product_type, client=client,
+                )
+                n_pages += 1
+                last_status = status
+                if err is not None:
+                    return None, status, err, n_pages
+                if not rows:
+                    break
+                added = False
+                for row in rows:
+                    ts = int(row[0])
+                    if ts not in all_rows_by_ts:
+                        all_rows_by_ts[ts] = row
+                        added = True
+                first_ts_this_page = min(int(r[0]) for r in rows)
+                if first_ts_this_page <= start_ms + tolerance_ms:
+                    break
+                new_cursor_end = first_ts_this_page - 1
+                if new_cursor_end >= cursor_end or not added:
+                    break  # defensive: no backward progress
+                cursor_end = new_cursor_end
+
+    all_rows = [all_rows_by_ts[ts] for ts in sorted(all_rows_by_ts)]
     df = _to_frame(all_rows)
     # Trim to the requested window (Bitget can overshoot by one bar)
     if not df.empty:

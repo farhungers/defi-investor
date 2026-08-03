@@ -16,6 +16,7 @@ Env:
 """
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
@@ -38,23 +39,29 @@ from defi_investor.models import EarnEvent
 LOG = logging.getLogger("defi_investor.backfill_labels_v030")
 
 
-def _already_labeled(sb, venue: str, product_id: str) -> bool:
-    """True iff ANY v0.3.0 row exists for this (venue, product_id).
+def _already_labeled(
+    sb, venue: str, product_id: str, *, retry_unlabelable: bool = False,
+) -> bool:
+    """True iff a v0.3.0 row exists that should NOT be re-attempted.
 
-    Since one call to label_event produces 3 rows (one per horizon), we
-    treat presence of any of the three as "already labeled" and skip the
-    event entirely. A future incremental backfill can key by horizon
-    stored in features JSONB if we want per-horizon rerun.
+    Default: any row is treated as "done" — v0.3.0 emits 3 rows per event
+    (one per horizon) so presence of any means the event was processed.
+
+    retry_unlabelable=True: rows with unlabelable_reason set do NOT count,
+    so events previously blocked by fetcher/label bugs can be re-attempted
+    after the underlying issue is fixed. Used to recover the 2026-07-29
+    A2b backfill's 27/27 unlabelable events after fetch_candles paging fix.
     """
-    r = (
+    q = (
         sb.table("earn_event_labels")
-        .select("product_id")
+        .select("unlabelable_reason")
         .eq("venue", venue)
         .eq("product_id", product_id)
-        .eq("labeler_version", LABELER_VERSION)
-        .limit(1)
-        .execute()
+        .like("labeler_version", f"{LABELER_VERSION}%")
     )
+    if retry_unlabelable:
+        q = q.is_("unlabelable_reason", "null")
+    r = q.limit(1).execute()
     return bool(r.data)
 
 
@@ -143,6 +150,15 @@ def _versioned(base_version: str, horizon_hours: int) -> str:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--retry-unlabelable", action="store_true",
+        help="Re-attempt events whose existing v0.3.0 rows all have "
+             "unlabelable_reason set. Use after fixing a fetcher or labeler "
+             "bug that produced spurious unlabelable rows.",
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -183,7 +199,8 @@ def main() -> int:
             venue = row.get("venue", "bitget")
             product_id = row["product_id"]
 
-            if _already_labeled(sb, venue, product_id):
+            if _already_labeled(sb, venue, product_id,
+                                retry_unlabelable=args.retry_unlabelable):
                 stats["skipped_existing"] += 1
                 continue
 

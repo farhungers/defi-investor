@@ -200,6 +200,87 @@ def test_fetch_candles_paginates_across_windows():
     assert prov.n_bars == 250
 
 
+def test_fetch_candles_backfills_when_bitget_skips_past_start():
+    """Regression: Bitget's 1m mix-candles endpoint returns the newest ~200
+    bars within a wide [startTime, endTime] window, ignoring startTime. Prior
+    to this fix, the forward-walk fetcher advanced past those newest bars
+    and terminated, leaving the anchor region uncovered. Consequence: the
+    2026-07-29 A2b v0.3.0 backfill labeled 27/27 sold-out events as
+    'anchor_before_first_walk_bar'. The fetcher now detects the gap (min_ts
+    > start_ms + tolerance) and backward-fills by shrinking cursor_end each
+    iteration until start_ms is reached."""
+    minute = 60_000
+    start_ms = 0
+    # end_ms aligned to the last returned bar's open time so Phase 1's
+    # cursor < end_ms condition fails cleanly after page 1.
+    end_ms = 599 * minute
+
+    # Page 1 (forward walk): simulate the skip-ahead — API returns the
+    # newest 200 bars (bars 400..599) instead of oldest 200 from start.
+    page1 = _mk_rows(400 * minute, minute, n=200)
+    # Phase 2 request #1: [0, 24000000-1] → API returns bars 200..399
+    page2 = _mk_rows(200 * minute, minute, n=200)
+    # Phase 2 request #2: [0, 12000000-1] → API returns bars 0..199 (start reached)
+    page3 = _mk_rows(0, minute, n=200)
+
+    fc = FakeClient(
+        perp_responses=[
+            FakeResponse(status_code=200, body={"code": "00000", "data": page1}),
+            FakeResponse(status_code=200, body={"code": "00000", "data": page2}),
+            FakeResponse(status_code=200, body={"code": "00000", "data": page3}),
+        ],
+    )
+    df, prov = fetch_candles(
+        symbol="SUSHIUSDT", start_ms=start_ms, end_ms=end_ms,
+        granularity="1m", client=fc,
+    )
+    assert df is not None
+    assert prov.market == "perp"
+    assert prov.n_bars == 600
+    assert prov.pages == 3
+    # Crucial for the labeler: coverage now extends down to start_ms.
+    assert df.index[0].value // 1_000_000 == start_ms
+    # Verify the backward-walk request pattern (cursor_end shrinks each iter)
+    assert fc.calls[0]["params"]["startTime"] == str(start_ms)
+    assert fc.calls[0]["params"]["endTime"] == str(end_ms)
+    assert fc.calls[1]["params"]["startTime"] == str(start_ms)
+    assert fc.calls[1]["params"]["endTime"] == str(400 * minute - 1)
+    assert fc.calls[2]["params"]["startTime"] == str(start_ms)
+    assert fc.calls[2]["params"]["endTime"] == str(200 * minute - 1)
+
+
+def test_fetch_candles_backfill_terminates_on_empty_response():
+    """If Bitget's retention floor cuts off before we reach start_ms, the
+    backward-fill must terminate on an empty response rather than looping
+    forever. Coverage will be partial — the labeler correctly treats that
+    as anchor_before_first_walk_bar."""
+    minute = 60_000
+    start_ms = 0
+    end_ms = 599 * minute
+
+    page1 = _mk_rows(400 * minute, minute, n=200)  # skip-ahead
+    page2 = _mk_rows(200 * minute, minute, n=200)
+    # Retention floor: next backward request returns nothing.
+    empty = FakeResponse(status_code=200, body={"code": "00000", "data": []})
+
+    fc = FakeClient(
+        perp_responses=[
+            FakeResponse(status_code=200, body={"code": "00000", "data": page1}),
+            FakeResponse(status_code=200, body={"code": "00000", "data": page2}),
+            empty,
+        ],
+    )
+    df, prov = fetch_candles(
+        symbol="X", start_ms=start_ms, end_ms=end_ms,
+        granularity="1m", client=fc,
+    )
+    assert df is not None
+    assert prov.pages == 3
+    assert prov.n_bars == 400  # bars 200..599, missing 0..199
+    # Earliest bar sits above start_ms — labeler will (correctly) tag unlabelable
+    assert df.index[0].value // 1_000_000 == 200 * minute
+
+
 # --- compute_atr -----------------------------------------------------------
 
 
