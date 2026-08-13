@@ -10,23 +10,31 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 
 ## Current state (as of 2026-08-13, Session 6 wrap)
 
-**Phase: 3c LIVE + 3d LIVE (18 A2b labels in prod) + 3e READY FOR VM DEPLOY (Migration 010 applied, daemon fix live, seeder re-run, cleanup cron wired).** 305/305 tests. `main` at `456b12a` locally (Session 6 changes staged, awaiting push greenlight). VM launch of `capture_daemon` still pending user action.
+**Phase: 3c LIVE + 3d LIVE (18 A2b labels in prod) + 3e READY FOR VM DEPLOY but DEFERRED BY USER.** 304/304 tests. `main` at `c88c7ee` on both origin + backup. Working tree clean.
 
-**Session 6 output (2026-08-13):** local hardening pass. Three files touched, one commit pending greenlight. Session goal was accuracy + logic-elevation under Second-Law constraint (no iteration on the A2b `{+1: 3, -1: 1, 0: 14}` split).
-- `tests/test_orderbook_storage.py` — new `test_drop_oldest_survives_active_drain`. Closes an audit-found coverage gap: existing drop-oldest test disabled the drain loop, so the interaction of drop-oldest with active drain was never exercised. New test bursts past `queue_max` with drain running, asserts stats-ledger consistency + no snapshot loss + final drain. 305/305.
-- `scripts/gate_report_a2b.py` — `.like()` hardening. `_load_labels_for_horizon` was using `.eq("labeler_version", "0.3.0#hH")` — same shape as the `_already_labeled` bug Session 5 fixed. Switched to `.like(f"{version_prefix}%")` mirroring the backfill pattern. Verified `gate_report.py` (A2a) and `gate_report_a3.py` do NOT have the same shape — both are one-row-per-event and `.eq()` is correct.
-- `.github/workflows/orderbook_cleanup.yml` — new hourly workflow at `:17` running `cleanup_orderbook_snapshots.py --retain-hours 24`. Free-tier pg_cron substitute. Fires on first push + hourly.
+**Session 6 output (2026-08-13):** three commits. Local hardening + accuracy scaffolding under Second-Law constraint (no iteration on the A2b `{+1: 3, -1: 1, 0: 14}` split).
+- `2f391ff` — L2 hardening pass. `test_drop_oldest_survives_active_drain` closes a drain-loop x drop-oldest coverage gap in `test_orderbook_storage.py`. `gate_report_a2b._load_labels_for_horizon` switched from `.eq()` to `.like(f"{prefix}%")` mirroring the Session-5 `_already_labeled` fix. New `.github/workflows/orderbook_cleanup.yml` (hourly at `:17`, 24h retention) wires the free-tier pg_cron substitute.
+- `1260960` — `test_cards.py` refactor. Single `_ev(**kwargs)` factory, `OBSERVED_AT` constant, `_assert_contains` helper for better failure locality, merged cohort-with/without tests. 11 → 10 tests, 168 → 144 lines. Coverage preserved.
+- `c88c7ee` — `scripts/coverage_forecast.py`. Read-only n-at-gate arithmetic for A2b. Live run: 17 sold-outs (10 bitget + 7 binance), projected event ceiling 26-58 depending on rate window (7d/14d comfortable, 30d/90d marginal). Second-Law safe: does not read labels, does not compute returns, only counts labelable events over time. Explicit caveat baked in: directional-n ≤ event-n, so ceiling isn't gate-n.
 
-**Latent-bug audit this session:** Explore subagent scanned for repeats of the two known bug classes (suffix-blind equality, cap-before-filter). No new instances found. Two weak spots surfaced instead (both fixed above).
+**Latent-bug audits this session (2 rounds):**
+- Round 1 (cross-cutting): no repeats of the two known bug classes (suffix-blind equality, cap-before-filter). Surfaced the drain-loop test gap + gate suffix hardening (fixed in `2f391ff`).
+- Round 2 (L2 pipeline unattended-runtime focus): 5 findings verified against source. 1 false positive (Binance timestamp reuse — misread; `_parse_depth5_payload` yields one snap per message). 4 real but low-priority for 5-symbol pilot (subscribe-ack loud symptom, flush observability adequate, drain-race latency-bounded, universe-refresh not urgent). **No code changes.** Discipline: don't add complexity beyond what task requires.
 
-**Session 6 gh-auth drift caught at open, again.** Active was `arbabfar`; recovered via `gh auth switch -u farhungers && gh auth setup-git`. Memory rule keeps earning its keep.
+**VM launch DEFERRED by user (2026-08-13).** Walked through the 8-step launch sequence (SSH → clone/pull → venv → .env transfer → dry-run → tmux → verify). User said walkthrough felt confusing. Re-explained project state in plain language: A2b runs itself via hourly GH Actions scraper, VM is only needed for A3, and there's no fire. User chose "option 1: skip A3 for now." A3 gate is 2026-11-30 so there's room.
+
+**Session 6 gh-auth drifts** — active flipped to `arbabfar` twice mid-session. Recovered both times with `gh auth switch -u farhungers && gh auth setup-git`. Memory rule keeps paying rent.
+
+**Memory updates this session (persisted, no commits):**
+- `reference_user_has_vm.md` — added "Current status" header noting the deferral. Behavioral guidance: do NOT open `gm` with "let's launch the daemon"; do NOT propose VM setup as next-session action unless user brings it up.
+- `MEMORY.md` — index one-liner updated to match.
 
 **Immediate next-session behavior:**
-1. **Launch `capture_daemon` on user's VM at 5-symbol pilot.** Command unchanged: `python -m defi_investor.orderbook.capture_daemon --venues bitget,binance --max-symbols 5`. Then watch `l2 writer stats:` land in Supabase.
-2. **Verify `orderbook_cleanup` workflow fires** on the next `:17` after push. First real prune happens on the hour after the daemon writes land.
-3. Once snapshots exist, smoke `scripts/gate_report_a3.py` (renders "insufficient data" path cleanly). Do NOT interpret numbers before n≥30.
-4. Storage-quota decision before scaling past ~10 symbols (10 GB/day raw at 50 symbols vs 500 MB free tier).
-5. Do NOT run `gate_report_a2b.py` — n=6 events, gate pre-committed to 2026-09-30 or n≥30.
+1. **Do NOT lead with the VM daemon.** User deferred. Open `gm` normally and let user set the agenda.
+2. A2b keeps accruing events via the hourly GH Actions scraper. No action needed.
+3. `scripts/coverage_forecast.py` is available for a quick "are we on track for n=30 by 2026-09-30" arithmetic check — Second-Law safe, no interpretation.
+4. Do NOT run `gate_report_a2b.py` — gate pre-committed to 2026-09-30 or n≥30.
+5. If user brings up A3, use the deferred walkthrough from Session 6 conversation history — do not re-invent from scratch.
 
 **Read these before doing anything:**
 - `docs/PHASE_3_SESSION_3_LOG.md` — Session 6 log (this session).
