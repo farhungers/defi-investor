@@ -8,9 +8,40 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 
 **Do not touch mm-radar from this project.** Sibling. Different discipline stack.
 
-## Current state (as of 2026-08-03, Session 5 wrap)
+## Current state (as of 2026-08-13, Session 6 wrap)
 
-**Phase: 3c LIVE + 3d LIVE (18 A2b labels in prod) + 3e READY FOR VM DEPLOY (Migration 010 applied, daemon fix live, seeder re-run).** 304/304 tests. `main` at `456b12a`, pushed to origin+backup at the same SHA. Working tree clean (session log this commit).
+**Phase: 3c LIVE + 3d LIVE (18 A2b labels in prod) + 3e READY FOR VM DEPLOY (Migration 010 applied, daemon fix live, seeder re-run, cleanup cron wired).** 305/305 tests. `main` at `456b12a` locally (Session 6 changes staged, awaiting push greenlight). VM launch of `capture_daemon` still pending user action.
+
+**Session 6 output (2026-08-13):** local hardening pass. Three files touched, one commit pending greenlight. Session goal was accuracy + logic-elevation under Second-Law constraint (no iteration on the A2b `{+1: 3, -1: 1, 0: 14}` split).
+- `tests/test_orderbook_storage.py` — new `test_drop_oldest_survives_active_drain`. Closes an audit-found coverage gap: existing drop-oldest test disabled the drain loop, so the interaction of drop-oldest with active drain was never exercised. New test bursts past `queue_max` with drain running, asserts stats-ledger consistency + no snapshot loss + final drain. 305/305.
+- `scripts/gate_report_a2b.py` — `.like()` hardening. `_load_labels_for_horizon` was using `.eq("labeler_version", "0.3.0#hH")` — same shape as the `_already_labeled` bug Session 5 fixed. Switched to `.like(f"{version_prefix}%")` mirroring the backfill pattern. Verified `gate_report.py` (A2a) and `gate_report_a3.py` do NOT have the same shape — both are one-row-per-event and `.eq()` is correct.
+- `.github/workflows/orderbook_cleanup.yml` — new hourly workflow at `:17` running `cleanup_orderbook_snapshots.py --retain-hours 24`. Free-tier pg_cron substitute. Fires on first push + hourly.
+
+**Latent-bug audit this session:** Explore subagent scanned for repeats of the two known bug classes (suffix-blind equality, cap-before-filter). No new instances found. Two weak spots surfaced instead (both fixed above).
+
+**Session 6 gh-auth drift caught at open, again.** Active was `arbabfar`; recovered via `gh auth switch -u farhungers && gh auth setup-git`. Memory rule keeps earning its keep.
+
+**Immediate next-session behavior:**
+1. **Launch `capture_daemon` on user's VM at 5-symbol pilot.** Command unchanged: `python -m defi_investor.orderbook.capture_daemon --venues bitget,binance --max-symbols 5`. Then watch `l2 writer stats:` land in Supabase.
+2. **Verify `orderbook_cleanup` workflow fires** on the next `:17` after push. First real prune happens on the hour after the daemon writes land.
+3. Once snapshots exist, smoke `scripts/gate_report_a3.py` (renders "insufficient data" path cleanly). Do NOT interpret numbers before n≥30.
+4. Storage-quota decision before scaling past ~10 symbols (10 GB/day raw at 50 symbols vs 500 MB free tier).
+5. Do NOT run `gate_report_a2b.py` — n=6 events, gate pre-committed to 2026-09-30 or n≥30.
+
+**Read these before doing anything:**
+- `docs/PHASE_3_SESSION_3_LOG.md` — Session 6 log (this session).
+- `docs/PHASE_3_SESSION_2_LOG.md` — Session 5 log (fetcher fix + backfill re-fire + daemon fix + Migration 010).
+- `docs/PHASE_3_SESSION_1_LOG.md` — Session 4 log (fetcher-bug diagnosis).
+- `docs/ROADMAP_V2.md` — current phase plan with adjustment triggers.
+- `docs/preregistrations/README.md` and `KILL_COUNTER.md` — the discipline layer.
+- `docs/METHOD.md` — confounds, gates, sign conventions.
+- `docs/CHARTER.md` — kill criteria + scope.
+- `docs/ORDERBOOK_DESIGN.md` — Phase 3e design + storage-volume math.
+- Memory: `feedback_no_borrowing_from_siblings.md`, `feedback_no_premature_signals.md`, `feedback_gm_trigger.md`, `user_kepler_identity.md`, `reference_user_has_vm.md`. Non-negotiable.
+
+**Prior state (as of 2026-08-03, Session 5 wrap):**
+
+Phase: 3c LIVE + 3d LIVE (18 A2b labels in prod) + 3e READY FOR VM DEPLOY (Migration 010 applied, daemon fix live, seeder re-run). 304/304 tests. `main` at `456b12a`, pushed to origin+backup at the same SHA.
 
 **Session 5 output (2026-08-03):** 6 commits.
 - `a228be3` — candles.py two-phase fetcher (forward walk unchanged, then backward-fill on 1m skip-ahead). Fixes root cause of Session 4's A2b unlabelable-27. `_already_labeled` latent-bug also fixed (was checking `eq("0.3.0")` but stored rows are `0.3.0#h24`). Added `--retry-unlabelable` flag. 2 new regression tests. 300/300.
@@ -20,27 +51,7 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 - `b1342a4` — roadmap row for daemon fix.
 - `456b12a` — Migration 010 applied to Supabase (comment-stripped variant — editor rejected the `--` line containing `|`). Three tables verified empty via smoke: `orderbook_snapshots_l2`, `orderbook_features`, `orderbook_universe`.
 
-**Memory updates this session (persisted, no commits):**
-- `reference_user_has_vm.md` — rewrote with confirmed specs (Linux Py 3.11+, always-on, RAM 300-1000 MB, disk under 2GB but daemon writes to Supabase so OK). Removed the "ask before A/B/C" gate. Added flag about Supabase-quota concern before scaling past ~10 symbols.
-- `MEMORY.md` — index one-liner refreshed to match.
-
-**Session 5 gh-auth drift caught pre-push again.** Active was `arbabfar`; recovered via `gh auth switch -u farhungers && gh auth setup-git`. Memory rule earned its keep on first invocation.
-
-**Immediate next-session behavior:**
-1. **Launch `capture_daemon` on user's VM at 5-symbol pilot.** Command: `python -m defi_investor.orderbook.capture_daemon --venues bitget,binance --max-symbols 5`. Then watch `l2 writer stats:` land in Supabase. `scripts/cleanup_orderbook_snapshots.py` should run within 24h of first data.
-2. Once even a few snapshots exist, run `scripts/gate_report_a3.py` to smoke the A3 pipeline. Do NOT interpret numbers before n≥30.
-3. Storage-quota decision before scaling past ~10 symbols (10 GB/day raw at 50 symbols vs 500 MB free tier).
-4. Do NOT run `gate_report_a2b.py` — n=6 events, gate pre-committed to 2026-09-30 or n≥30.
-
-**Read these before doing anything (unchanged since Session 4):**
-- `docs/PHASE_3_SESSION_2_LOG.md` — Session 5 log (this session).
-- `docs/PHASE_3_SESSION_1_LOG.md` — Session 4 log (includes the fetcher-bug diagnosis).
-- `docs/ROADMAP_V2.md` — current phase plan with adjustment triggers.
-- `docs/preregistrations/README.md` and `KILL_COUNTER.md` — the discipline layer.
-- `docs/METHOD.md` — confounds, gates, sign conventions.
-- `docs/CHARTER.md` — kill criteria + scope.
-- `docs/ORDERBOOK_DESIGN.md` — Phase 3e design + storage-volume math.
-- Memory: `feedback_no_borrowing_from_siblings.md`, `feedback_no_premature_signals.md`, `feedback_gm_trigger.md`, `user_kepler_identity.md`, `reference_user_has_vm.md`. Non-negotiable.
+**Session 5 gh-auth drift caught pre-push again.** Active was `arbabfar`; recovered via `gh auth switch -u farhungers && gh auth setup-git`.
 
 **Prior state (as of 2026-07-29, Session 4 wrap):**
 

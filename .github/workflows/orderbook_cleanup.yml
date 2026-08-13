@@ -1,0 +1,44 @@
+name: orderbook_cleanup
+
+# Free-tier pg_cron substitute per docs/ORDERBOOK_DESIGN.md. Prunes
+# orderbook_snapshots_l2 rows older than 24h so the raw L2 stream does
+# not blow the 500 MB Supabase free-tier cap. The A3 feature extractor
+# only needs the 10-minute pre-event window and consumes it via the A3
+# backfill script; 24h retention leaves ample margin for a sold-out
+# event to fire and its backfill to run before pruning.
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: orderbook_cleanup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install
+        run: pip install --quiet -e .
+
+      - name: Prune stale L2 snapshots
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/cleanup_orderbook_snapshots.py --retain-hours 24

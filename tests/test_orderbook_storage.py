@@ -99,6 +99,40 @@ async def test_drop_oldest_when_queue_full():
     assert stats["enqueued"] == 10
 
 
+async def test_drop_oldest_survives_active_drain():
+    # Regression for an audit-found coverage gap: test_drop_oldest_when_queue_full
+    # disables the drain, so the interaction between drop-oldest and an active
+    # drain loop was never exercised. A silent bug in the drain path (e.g.,
+    # condition-event not re-arming after a drop) would let snapshots accumulate
+    # or the loop to spin without progress. This test drives both paths.
+    client = _FakeClient()
+    # Small queue, small batch, short interval so drops and flushes interleave.
+    w = BatchedL2Writer(client, queue_max=5, batch_size=2, max_interval_s=0.05)
+    await w.start()
+    try:
+        # Burst well past queue_max so drops are guaranteed while drain runs.
+        for i in range(50):
+            w.enqueue(_snap(i))
+        # Let the drain make several passes.
+        await asyncio.sleep(0.5)
+        # Post-drain burst confirms the loop is still live and the queue clears.
+        for i in range(50, 55):
+            w.enqueue(_snap(i))
+        await asyncio.sleep(0.3)
+    finally:
+        await w.stop()
+    stats = w.stats()
+    # Drops must have happened (queue_max=5 vs 50-item burst).
+    assert stats["dropped"] > 0
+    # Every enqueue counted; nothing lost from the ledger.
+    assert stats["enqueued"] == 55
+    # Every non-dropped snapshot was flushed by stop() (final drain).
+    assert stats["flushed"] == stats["enqueued"] - stats["dropped"]
+    assert stats["queue_depth"] == 0
+    total_rows = sum(len(c["rows"]) for c in client.calls)
+    assert total_rows == stats["flushed"]
+
+
 async def test_flush_error_does_not_kill_loop():
     class _ExplodingClient(_FakeClient):
         def __init__(self):

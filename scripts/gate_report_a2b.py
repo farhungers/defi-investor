@@ -52,12 +52,18 @@ CONFOUND_SPLIT_HITS_REQUIRED = 2
 
 
 def _load_labels_for_horizon(sb, horizon_hours: int) -> list[dict]:
-    """v0.3.0 backfill stores horizon in labeler_version suffix like '0.3.0#h24'."""
-    version_suffix = f"{LABELER_VERSION}#h{horizon_hours}"
+    """v0.3.0 backfill stores horizon in labeler_version suffix like '0.3.0#h24'.
+
+    Uses LIKE with a wildcard tail so any future extension of the suffix
+    (e.g. a retry marker like '0.3.0#h24#r1') still matches. Mirrors the
+    fix in backfill_labels_v030._already_labeled, added after an equality
+    check on the un-suffixed version silently missed every row.
+    """
+    version_prefix = f"{LABELER_VERSION}#h{horizon_hours}"
     r = (
         sb.table("earn_event_labels")
         .select("*")
-        .eq("labeler_version", version_suffix)
+        .like("labeler_version", f"{version_prefix}%")
         .execute()
     )
     return r.data or []
