@@ -11,158 +11,134 @@ from defi_investor.cards import (
 from defi_investor.models import EarnEvent
 
 
-def _lab() -> EarnEvent:
+OBSERVED_AT = "2026-07-10T02:35:00+00:00"
+
+
+def _ev(
+    *,
+    coin: str = "LAB",
+    apy: float = 365.0,
+    tiers: list[dict] | None = None,
+    cap: float = 1000.0,
+    product_id: str = "1438002720001814528",
+    status: int = 6,
+    sold_out: bool = True,
+    start: str = "2026-05-12T07:54:45.770000+00:00",
+    biz: str = "Savings",
+) -> EarnEvent:
+    if tiers is None:
+        tiers = [{
+            "apy": f"{apy:.2f}", "maxStepValue": f"{cap:.2f}",
+            "minStepValue": "0", "productId": product_id, "rateLevel": 0,
+        }]
     return EarnEvent(
-        product_id="1438002720001814528",
-        coin_name="LAB",
-        second_biz_line="Savings",
-        max_apy=365.0,
-        min_apy=365.0,
-        per_user_cap_underlying=1000.0,
-        tiers=[{"apy": "365.00", "maxStepValue": "1000.00", "minStepValue": "0",
-                "productId": "1438002720001814528", "rateLevel": 0}],
-        start_time="2026-05-12T07:54:45.770000+00:00",
-        status=6,
-        sold_out=True,
+        product_id=product_id, coin_name=coin, second_biz_line=biz,
+        max_apy=apy, min_apy=apy, per_user_cap_underlying=cap,
+        tiers=tiers, start_time=start, status=status, sold_out=sold_out,
     )
 
 
-def _usdt() -> EarnEvent:
-    return EarnEvent(
-        product_id="964334561256718336",
-        coin_name="USDT",
-        second_biz_line="Savings",
-        max_apy=6.16,
-        min_apy=1.50,
-        per_user_cap_underlying=300.0,
+def _usdt_tiered() -> EarnEvent:
+    pid = "964334561256718336"
+    return _ev(
+        coin="USDT", apy=6.16, cap=300.0, product_id=pid,
+        status=2, sold_out=False, start="2025-01-15T00:00:00+00:00",
         tiers=[
             {"apy": "6.16", "maxStepValue": "300", "minStepValue": "0",
-             "productId": "964334561256718336", "rateLevel": 0},
+             "productId": pid, "rateLevel": 0},
             {"apy": "1.50", "maxStepValue": "120000000", "minStepValue": "300",
-             "productId": "964334561256718336", "rateLevel": 1},
+             "productId": pid, "rateLevel": 1},
         ],
-        start_time="2025-01-15T00:00:00+00:00",
-        status=2,
-        sold_out=False,
     )
+
+
+def _assert_contains(text: str, *fragments: str) -> None:
+    """Assert each fragment appears; failure message names the missing one."""
+    for f in fragments:
+        assert f in text, f"missing fragment: {f!r}"
 
 
 def test_sold_out_card_lab_shape():
-    c = sold_out_card(_lab(), observed_at="2026-07-10T02:35:00+00:00")
-    assert "SOLD OUT" in c
-    assert "LAB" in c
-    assert "Savings" in c
-    assert "365%" in c
-    assert "1,000 LAB" in c
-    assert "single-tier" in c
-    assert "1438002720001814528" in c
-    assert "<b>" in c and "</b>" in c
-    assert "<pre>" in c
-    assert "STRUCTURE" in c
-    assert "TIMING" in c
-    assert "WHY THIS IS INTERESTING" in c
+    c = sold_out_card(_ev(), observed_at=OBSERVED_AT)
+    _assert_contains(
+        c,
+        "SOLD OUT", "LAB", "Savings", "365%", "1,000 LAB", "single-tier",
+        "1438002720001814528", "<b>", "</b>", "<pre>",
+        "STRUCTURE", "TIMING", "WHY THIS IS INTERESTING",
+    )
 
 
 def test_sold_out_card_stars_for_high_apr():
-    c = sold_out_card(_lab(), observed_at="2026-07-10T02:35:00+00:00")
-    # LAB is 365% APR — top tier → 5 stars
-    assert "★★★★★" in c
+    # LAB 365% APR — top-tier rarity == 5 stars
+    assert "★★★★★" in sold_out_card(_ev(), observed_at=OBSERVED_AT)
 
 
 def test_reopened_card_uses_green_marker():
-    c = reopened_card(_lab(), observed_at="2026-07-10T02:35:00+00:00")
-    assert "🟢" in c
-    assert "RE-OPENED" in c
-    assert "1438002720001814528" in c
+    c = reopened_card(_ev(), observed_at=OBSERVED_AT)
     # always 4 stars for a re-open
-    assert "★★★★☆" in c
+    _assert_contains(c, "🟢", "RE-OPENED", "1438002720001814528", "★★★★☆")
 
 
 def test_new_listing_card_multi_tier_summary():
-    c = new_listing_card(_usdt(), observed_at="2026-07-10T02:35:00+00:00")
-    assert "NEW LISTING" in c
-    assert "USDT" in c
-    # multi-tier structure surfaced in the STRUCTURE row AND the TIER LADDER section
-    assert "6.16%" in c
-    assert "1.50%" in c
-    assert "2-tier" in c
-    assert "TIER LADDER" in c
-    # L0 and L1 labels present
-    assert "L0" in c and "L1" in c
+    c = new_listing_card(_usdt_tiered(), observed_at=OBSERVED_AT)
+    _assert_contains(
+        c,
+        "NEW LISTING", "USDT",
+        "6.16%", "1.50%", "2-tier",
+        "TIER LADDER", "L0", "L1",
+    )
 
 
 def test_stall_card_has_actions_link_when_url_given():
     c = stall_card(
         last_scrape_at="2026-07-10T01:30:00+00:00",
-        minutes_ago=42,
-        threshold_min=30,
+        minutes_ago=42, threshold_min=30,
         actions_url="https://github.com/farhungers/defi-investor/actions",
     )
-    assert "SCRAPER STALL" in c
-    assert "42m ago" in c
-    assert "farhungers/defi-investor" in c
-    assert '<a href=' in c
-    assert "WHAT TO CHECK" in c
+    _assert_contains(
+        c, "SCRAPER STALL", "42m ago", "farhungers/defi-investor",
+        '<a href=', "WHAT TO CHECK",
+    )
 
 
 def test_stall_card_no_link_when_url_absent():
     c = stall_card(
         last_scrape_at="2026-07-10T01:30:00+00:00",
-        minutes_ago=42,
-        threshold_min=30,
+        minutes_ago=42, threshold_min=30,
     )
     assert '<a href' not in c
 
 
 def test_parser_drift_card_lists_coins():
     c = parser_drift_card(
-        coin_names=["ABC", "DEF", "GHI"],
-        drift_count=3,
-        observed_at="2026-07-10T02:35:00+00:00",
+        coin_names=["ABC", "DEF", "GHI"], drift_count=3,
+        observed_at=OBSERVED_AT,
     )
-    assert "PARSER DRIFT" in c
-    assert "3" in c
-    assert "ABC" in c
-    assert "DEF" in c
-    assert "WHAT THIS MEANS" in c
+    _assert_contains(c, "PARSER DRIFT", "3", "ABC", "DEF", "WHAT THIS MEANS")
 
 
-def test_sold_out_card_with_cohort_ctx():
+def test_sold_out_card_cohort_section_toggles_on_ctx():
     ctx = {
-        "cohort_size": 6,
-        "n_active": 3,
-        "n_sold": 3,
-        "median_life_d": 42.0,
-        "this_life_d": 58.0,
-        "band_lo": 357.7,
-        "band_hi": 372.3,
-        "distinct_coins": 5,
+        "cohort_size": 6, "n_active": 3, "n_sold": 3,
+        "median_life_d": 42.0, "this_life_d": 58.0,
+        "band_lo": 357.7, "band_hi": 372.3, "distinct_coins": 5,
     }
-    c = sold_out_card(_lab(), observed_at="2026-07-10T02:35:00+00:00", ctx=ctx)
-    assert "COHORT" in c
-    assert "6 rows" in c
-    assert "42" in c  # median lifespan
-
-
-def test_sold_out_card_without_cohort_ctx_omits_section():
-    c = sold_out_card(_lab(), observed_at="2026-07-10T02:35:00+00:00", ctx=None)
-    assert "COHORT" not in c
+    with_ctx = sold_out_card(_ev(), observed_at=OBSERVED_AT, ctx=ctx)
+    without_ctx = sold_out_card(_ev(), observed_at=OBSERVED_AT, ctx=None)
+    _assert_contains(with_ctx, "COHORT", "6 rows", "42")
+    assert "COHORT" not in without_ctx
 
 
 def test_parser_drift_card_truncates_long_coin_list():
     coins = [f"C{i}" for i in range(20)]
     c = parser_drift_card(
-        coin_names=coins,
-        drift_count=20,
-        observed_at="2026-07-10T02:35:00+00:00",
+        coin_names=coins, drift_count=20, observed_at=OBSERVED_AT,
     )
     assert "…" in c
 
 
 def test_card_escapes_untrusted_coin_name():
     """A malicious coin_name shouldn't inject HTML."""
-    ev = _lab()
-    ev.coin_name = "<script>x</script>"
-    c = sold_out_card(ev, observed_at="2026-07-10T02:35:00+00:00")
+    c = sold_out_card(_ev(coin="<script>x</script>"), observed_at=OBSERVED_AT)
     assert "<script>x</script>" not in c
     assert "&lt;script&gt;" in c
