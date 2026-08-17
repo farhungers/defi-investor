@@ -160,10 +160,17 @@ def _fetch_market(
     the last returned ts. Works for oldest-first endpoints (4H perp etc.).
 
     Phase 2 (backward fill): if Phase 1's earliest returned bar is far past
-    the requested start_ms (Bitget's 1m mix-candles endpoint empirically
-    returns the newest ~200 bars within a wide window, ignoring startTime),
-    walk backward by shrinking cursor_end to first_ts - 1 each iteration
-    until start_ms is reached or an empty response ends coverage.
+    the requested start_ms, walk backward by shrinking cursor_end to
+    first_ts - 1 each iteration until start_ms is reached or an empty
+    response ends coverage.
+
+    Empirical observation (Session 7 probe, 2026-08-17): Bitget's mix-candles
+    endpoint returns the NEWEST-N-within-window on any granularity when the
+    requested span exceeds one page (1m, 5m, 15m, 1H when the window is
+    wide enough). 4H and 1D at typical A2b query widths (30-day sigma pre-
+    anchor, 168h post-anchor walk) fit within one page so Phase 1 alone
+    suffices. Phase 2 is the safety net for high-granularity or long-span
+    queries; the code path is granularity-agnostic.
 
     Regression context: without Phase 2, all 27 sold-out events in the
     2026-07-29 v0.3.0 A2b backfill labelled as anchor_before_first_walk_bar
