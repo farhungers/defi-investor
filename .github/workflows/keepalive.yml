@@ -1,0 +1,41 @@
+name: keepalive
+
+# Prevents Supabase free-tier auto-pause (7-day inactivity). Writes one
+# row to the healthchecks table every 3 days. Full context in
+# db/migrations/011_healthchecks.sql.
+
+on:
+  schedule:
+    - cron: '23 6 */3 * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install
+        run: pip install --quiet -e .
+
+      - name: Heartbeat
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/heartbeat.py
