@@ -65,8 +65,21 @@ def _already_labeled(
     return bool(r.data)
 
 
-def _has_clean_anchor(sb, venue: str, product_id: str) -> bool:
-    """True iff we recorded a status transition into sold-out (new_status=6)."""
+def _has_clean_anchor(
+    sb, venue: str, product_id: str, *, sold_out_first_seen_at: Optional[str] = None,
+) -> bool:
+    """True iff we can point to a defensible sold-out anchor moment.
+
+    Bitget: transition into status=6 recorded in earn_events_status_log
+    (per-tick observation of the phase change).
+
+    Binance: no per-tick status transitions are captured; the parser is a
+    diff-detector that stamps sold_out_first_seen_at when a coin first
+    appears in the sold-out list. That timestamp IS the anchor witness for
+    Binance events. Presence of the field is sufficient.
+    """
+    if venue == "binance":
+        return bool(sold_out_first_seen_at)
     r = (
         sb.table("earn_events_status_log")
         .select("id")
@@ -210,7 +223,10 @@ def main() -> int:
 
             event = EarnEvent.from_dict(row)
 
-            if not _has_clean_anchor(sb, venue, product_id):
+            if not _has_clean_anchor(
+                sb, venue, product_id,
+                sold_out_first_seen_at=row.get("sold_out_first_seen_at"),
+            ):
                 stats["stale_anchor"] += 1
                 LOG.debug("stale anchor: %s/%s", venue, product_id)
                 continue
