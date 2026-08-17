@@ -174,10 +174,14 @@ def main() -> int:
 
     # Both venues. Bitget events have status=6 sold-outs from the transition
     # log; Binance events flip sold_out=True via the diff-detector.
+    # Filter on `sold_out_first_seen_at IS NOT NULL` (ever-sold-out), not
+    # on `sold_out=True` (currently-sold-out). Bitget products can re-open
+    # after selling out; the anchor moment is historical and its label is
+    # still meaningful.
     r = (
         sb.table("earn_events")
         .select("*")
-        .eq("sold_out", True)
+        .not_.is_("sold_out_first_seen_at", "null")
         .execute()
     )
     events_raw = r.data or []

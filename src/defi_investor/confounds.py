@@ -182,7 +182,7 @@ def perp_vol_change_prior_24h(coin_name: str, anchor_ts: datetime, *,
     return (v_recent - v_prior) / v_prior
 
 
-_OI_SNAPSHOT_MATCH_TOLERANCE = timedelta(minutes=30)
+_OI_SNAPSHOT_MATCH_TOLERANCE = timedelta(minutes=180)
 _OI_LOOKUP_WINDOW = timedelta(hours=24) + _OI_SNAPSHOT_MATCH_TOLERANCE
 
 _VEST_WINDOW = timedelta(days=3)
@@ -201,7 +201,10 @@ def perp_oi_pct_change_prior_24h(
 
     Reads from `earn_oi_snapshots`, which is populated forward-only by the
     scraper cron. Picks the snapshot closest to `anchor - 24h` and to
-    `anchor` itself, each within ±30 minutes (2x the scrape cadence).
+    `anchor` itself, each within `_OI_SNAPSHOT_MATCH_TOLERANCE` (180 min,
+    ~3x the observed p50 scrape cadence of 60 min; still ≈12% of the 24h
+    delta being computed so any matched snapshot is meaningfully close on
+    the metric's time scale).
 
     Returns None when either endpoint has no qualifying snapshot, when the
     coin has no perp market (market='none'), or when the earlier value is

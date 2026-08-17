@@ -245,6 +245,22 @@ def test_perp_oi_pct_change_prior_24h_none_when_before_is_zero():
     assert cf_mod.perp_oi_pct_change_prior_24h("LAB", anchor, sb_client=sb) is None
 
 
+def test_perp_oi_pct_change_prior_24h_tolerates_realistic_cron_gap():
+    """Regression: production cadence had a p50 of 60 min, so a snapshot
+    ~2.5h off from `anchor - 24h` was silently dropped under the old
+    30-min tolerance. Widened to 180 min; must now be accepted."""
+    anchor = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    rows = [
+        {"snapped_at": (anchor - timedelta(hours=24, minutes=150)).isoformat(),
+         "market": "perp", "oi_base": 1000.0},
+        {"snapped_at": anchor.isoformat(),
+         "market": "perp", "oi_base": 1500.0},
+    ]
+    sb = _StubSbClient(rows)
+    v = cf_mod.perp_oi_pct_change_prior_24h("LAB", anchor, sb_client=sb)
+    assert v == pytest.approx(0.5)
+
+
 def test_perp_oi_pct_change_prior_24h_survives_query_exception():
     class BrokenSb:
         def table(self, _n):
