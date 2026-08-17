@@ -8,7 +8,65 @@ Sister project to `mm-radar` (at `C:\Users\farha\OneDrive\Desktop\shitcoindetect
 
 **Do not touch mm-radar from this project.** Sibling. Different discipline stack.
 
-## Current state (as of 2026-08-13, Session 6 wrap)
+## Current state (as of 2026-08-17, Session 7 wrap)
+
+**Phase: 3c LIVE + 3d LIVE (57 A2b labels / 19 labelable events in prod) + 3e READY FOR VM DEPLOY but DEFERRED BY USER.** 306/306 tests. `main` at pending-commit on both origin + backup after final push. Working tree clean.
+
+**Session 7 output (2026-08-17):** 5 commits — huge session, batch-execution mode. Cleared 2 account-level blockers + 3 code bugs + shipped ops hardening.
+
+- `0caaed7` — Supabase keepalive: `db/migrations/011_healthchecks.sql`, `scripts/heartbeat.py`, `.github/workflows/keepalive.yml` (3-day cron). Prevents free-tier auto-pause. Fixes Issue #2.
+- `d58c941` — Confound audit fixes: widened `_OI_SNAPSHOT_MATCH_TOLERANCE` 30→180 min (docstring claimed 2× cadence, was 0.5×; observed p50=60 min); switched backfill filter from `sold_out=True` to `sold_out_first_seen_at IS NOT NULL` (ever-sold-out). Regression test locks tolerance.
+- `d27fe57` — Binance branch in `_has_clean_anchor`: Bitget still requires status_log transition, Binance accepts `sold_out_first_seen_at` (diff-detector semantics). Unlocked 4 Binance labels immediately.
+- `7c26b78` — `label_event` gates on `sold_out_first_seen_at` (not `sold_out`); re-opened Bitget products with historical anchors still labelable. +8 events. `docs/OPERATIONS.md` runbook.
+- pending — bootstrap CI in `gate_report_a2b` (descriptive, not a gate criterion).
+
+**A2b state evolution this session (Second-Law witness, no iteration on labeler):**
+- Session 6 close: 6 events, 18 rows, `{+1:3, -1:1, 0:14}`
+- Session 7 mid: 11 events, 33 rows after Q3 Binance fix (`d27fe57`)
+- Session 7 end: **19 labelable events, 57 rows** after Q1 re-opened-product fix (`7c26b78`)
+  - h=1d: `{0:14, -1:2, +1:3}`
+  - h=2d: `{+1:4, 0:12, -1:3}`
+  - h=7d: `{+1:7, 0:6, -1:6}`
+  - by venue: bitget `{+1:14, -1:5, 0:26}`, binance `{-1:6, 0:6}`
+- 28 events remain unlabelable: all old anchors (2026-07-09/10) past Bitget's 1m retention (~30-45d). Fundamentally unrecoverable, not a bug.
+- Labeler code (v0.3.0, k=2.0, symmetric barriers, horizons 24/48/168h, sigma_20d on daily log returns) **unchanged all session**.
+
+**Two account-level blockers cleared (required user action):**
+1. **GitHub Actions billing block** since 2026-08-09: scraper red for 8 days. Root cause: repo private, ran out of Actions minutes. Fix: `gh repo edit --visibility public --accept-visibility-change-consequences`. User authorized.
+2. **Supabase free-tier auto-pause**: 7-day inactivity → subdomain stops resolving. User restored via dashboard. Keepalive workflow prevents recurrence.
+
+**Bug diagnoses this session (all confirmed by direct probe, not assumed):**
+- `_OI_SNAPSHOT_MATCH_TOLERANCE` too tight: prod OI snapshots have p50=60 min gaps; 30-min tolerance clipped every target_before match.
+- Backfill `sold_out=True` filter missed re-opened products with historical anchors.
+- `_has_clean_anchor` required Bitget-only status_log; all Binance events failed.
+- `label_event` bailed on `sold_out=False`; re-opened products with historical anchors were silently dropped by backfill.
+- 3 Binance events (PIVX/AEUR/PYR) unlabelable due to `__ABSENT__` sentinel in venue_coin_map. Not a bug — no Bitget candle source exists.
+
+**Read-only audits this session (all clean or documented):**
+- **Anchor provenance:** 47/47 label rows have `anchor_ts == sold_out_first_seen_at`. No drift.
+- **Cross-venue timestamp reconciliation:** only 1 coin (VANRY) sold-out on both venues; different products at different times, no anomaly.
+- **Candle continuity sample:** 3/3 sampled old-anchor events show 0 bars in Bitget's current retention window. Confirms 30-45d 1m retention decay. Labels stored from earlier runs are unaffected.
+- **Purged embargo (h=168):** default 1% embargo (~9 hours for 39-day corpus) is defensible per de Prado; primary leakage protection is the purge (interval-overlap), not embargo. No code change needed.
+
+**Session 7 gh-auth drift:** active flipped to `arbabfar` at session open. Recovered via `gh auth switch -u farhungers && gh auth setup-git`. Memory rule keeps paying rent.
+
+**Memory updates this session (persisted, no commits):**
+- `feedback_one_issue_at_a_time.md` — user wants issues surfaced sequentially with options + recommendation, then user picks, then next. Applied for Issues #1-#5; batch-execution mode from #6 onward per explicit user direction.
+- `MEMORY.md` — index updated.
+
+**Immediate next-session behavior:**
+1. **A2b n is at 19 labelable events** (across 3 horizons). Gate threshold is 30. Coverage_forecast rate suggests reachable by 2026-09-30 if scraper stays green.
+2. `keepalive.yml` runs every 3 days at 06:23 UTC. If it goes red, Supabase pause returns within a week.
+3. Do NOT run `gate_report_a2b.py` for interpretation. Bootstrap CI is descriptive only.
+4. Queued for future sessions: fetcher paging on other endpoints (regression test), placebo cohort scaffolding (needs `PLACEBO_A2b.md` pre-reg first), A3 orderbook deploy (still user-deferred).
+
+**Queued but not chased this session:**
+- Fetcher paging regression on other endpoints
+- Placebo cohort scaffolding (would need dedicated pre-registration doc)
+- A3 orderbook deploy (user deferred at Session 6)
+- L2 latent bug batch (blocked on A3 deploy)
+
+## Prior current state (as of 2026-08-13, Session 6 wrap)
 
 **Phase: 3c LIVE + 3d LIVE (18 A2b labels in prod) + 3e READY FOR VM DEPLOY but DEFERRED BY USER.** 304/304 tests. `main` at `c88c7ee` on both origin + backup. Working tree clean.
 

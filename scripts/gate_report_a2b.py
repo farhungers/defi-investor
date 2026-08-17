@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import random
 import statistics as st
 import sys
 from datetime import datetime, timezone
@@ -49,6 +50,11 @@ LOG = logging.getLogger("defi_investor.gate_report_a2b")
 MIN_N_FOR_GATE = 30
 HHI_WINNER_GATE = 0.15
 CONFOUND_SPLIT_HITS_REQUIRED = 2
+
+# Bootstrap CI is descriptive, not a gate criterion. Fixed seed keeps
+# each run reproducible against the same corpus.
+BOOTSTRAP_ITERS = 10_000
+BOOTSTRAP_SEED = 20260817
 
 
 def _load_labels_for_horizon(sb, horizon_hours: int) -> list[dict]:
@@ -107,6 +113,30 @@ def _log_comb(n: int, k: int) -> float:
     if k < 0 or k > n:
         return float("-inf")
     return math.lgamma(n + 1) - math.lgamma(k + 1) - math.lgamma(n - k + 1)
+
+
+def _bootstrap_p_plus_ci(
+    directional_labels: list[int], *, iters: int = BOOTSTRAP_ITERS,
+    seed: int = BOOTSTRAP_SEED,
+) -> Optional[tuple[float, float]]:
+    """95% percentile bootstrap CI on P(+1 | directional).
+
+    Descriptive diagnostic only — gate remains the binomial p-value.
+    Useful to visualize sample-size uncertainty at low n. Returns None if
+    the directional sample is empty.
+    """
+    if not directional_labels:
+        return None
+    rng = random.Random(seed)
+    n = len(directional_labels)
+    p_plus_samples: list[float] = []
+    for _ in range(iters):
+        draws = [directional_labels[rng.randrange(n)] for _ in range(n)]
+        p_plus_samples.append(draws.count(1) / n)
+    p_plus_samples.sort()
+    lo = p_plus_samples[int(0.025 * iters)]
+    hi = p_plus_samples[int(0.975 * iters)]
+    return lo, hi
 
 
 def _confound_split_asymmetry(
@@ -171,6 +201,13 @@ def _horizon_block(sb, horizon_hours: int) -> tuple[list[str], Optional[float], 
     if n_directional > 0:
         p_plus = counts[1] / n_directional
         lines.append(f"  P(+1 | directional):    {p_plus:.3f}  (H0: 0.500)")
+        directional_labels = [r["label"] for r in primary if r.get("label") in (1, -1)]
+        ci = _bootstrap_p_plus_ci(directional_labels)
+        if ci is not None:
+            lines.append(
+                f"  Bootstrap 95% CI:       [{ci[0]:.3f}, {ci[1]:.3f}]  "
+                f"(descriptive, not a gate criterion; iters={BOOTSTRAP_ITERS})"
+            )
     if p_val is not None:
         lines.append(f"  Two-sided binomial p:   {_fmt_p(p_val)}")
 
