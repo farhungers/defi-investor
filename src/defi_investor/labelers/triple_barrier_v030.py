@@ -216,10 +216,15 @@ def label_event(
         dict keyed by horizon_hours. Each value is a LabelRowV030; check
         `unlabelable_reason` for None-label rows.
     """
-    if not event.sold_out:
+    # Gate on presence of a historical anchor, NOT on current sold_out state.
+    # Bitget products can re-open after selling out, flipping sold_out back
+    # to False. The triple-barrier label is about the forward trajectory
+    # from the historical anchor moment (sold_out_first_seen_at), so a
+    # since-re-opened product is still eligible.
+    anchor_iso = event.sold_out_first_seen_at
+    if not anchor_iso:
         return {}
 
-    anchor_iso = event.sold_out_first_seen_at
     anchor = _parse_iso(anchor_iso)
     if anchor is None:
         return {

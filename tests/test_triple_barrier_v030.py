@@ -85,10 +85,28 @@ def _walk_df(
     )
 
 
-def test_non_sold_out_event_returns_empty_dict():
-    ev = _event(sold_out=False)
+def test_event_without_anchor_returns_empty_dict():
+    """No sold_out_first_seen_at -> nothing to anchor a triple-barrier on."""
+    ev = _event(sold_out=False)  # helper also sets first_seen_at=None
     result = label_event(ev, daily_df=_daily_df(), walk_df=_walk_df(60 * 200, 100.0))
     assert result == {}
+
+
+def test_reopened_product_still_labels_historical_anchor():
+    """Bitget products can flip back to sold_out=False after selling out.
+    The triple-barrier is about the forward trajectory from the historical
+    anchor, so a re-opened product with a valid sold_out_first_seen_at
+    must still be labeled."""
+    ev = EarnEvent(
+        product_id="REOPENED_001",
+        coin_name="TEST",
+        second_biz_line="Savings",
+        venue="bitget",
+        sold_out=False,                       # currently re-opened
+        sold_out_first_seen_at=ANCHOR_ISO,    # but was sold-out at ANCHOR_ISO
+    )
+    result = label_event(ev, daily_df=_daily_df(), walk_df=_walk_df(60 * 200, 100.0))
+    assert set(result.keys()) == set(HORIZONS_HOURS)
 
 
 def test_returns_one_row_per_horizon():
